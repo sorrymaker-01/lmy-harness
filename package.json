@@ -1,0 +1,25 @@
+{
+  "name": "vertical-agent-mcp-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "node --enable-source-maps apps/api/dist/server.js",
+    "check": "tsc -b --pretty false",
+    "test": "node --test apps/api/dist/**/*.test.js packages/*/dist/**/*.test.js",
+    "clean": "rm -rf apps/*/dist packages/*/dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.2",
+    "zod": "^3.24.1"
+  }
+}

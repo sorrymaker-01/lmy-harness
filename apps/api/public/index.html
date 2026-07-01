@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MCP Skill Agent MVP</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="chat">
+        <header>
+          <h1>MCP Skill Agent MVP</h1>
+          <button id="newConversation">New</button>
+        </header>
+        <div id="messages" class="messages"></div>
+        <form id="chatForm" class="composer">
+          <input id="messageInput" placeholder="Ask something, e.g. 现在几点？ or 总结这段文字..." autocomplete="off" />
+          <button>Send</button>
+        </form>
+      </section>
+      <aside>
+        <h2>Tools</h2>
+        <div id="tools"></div>
+        <h2>Trace</h2>
+        <pre id="trace"></pre>
+      </aside>
+    </main>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
+

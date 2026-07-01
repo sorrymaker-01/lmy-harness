@@ -1,0 +1,17 @@
+{
+  "name": "@agent/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "dependencies": {
+    "@agent/agent-runtime": "0.1.0",
+    "@agent/memory": "0.1.0",
+    "@agent/mcp-runtime": "0.1.0",
+    "@agent/model-router": "0.1.0",
+    "@agent/shared": "0.1.0",
+    "@agent/skill-engine": "0.1.0"
+  }
+}
+
