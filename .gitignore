@@ -1,8 +1,15 @@
 node_modules/
-dist/
+**/dist/
+apps/server/bin/
+apps/server/data/*.json
+apps/server/data/*.db
+apps/server/data/*.db-shm
+apps/server/data/*.db-wal
 *.tsbuildinfo
+*.hertz.gz
 .env
 .env.*
 *.log
 .DS_Store
+.idea/
 vertical_agent_*.xml
