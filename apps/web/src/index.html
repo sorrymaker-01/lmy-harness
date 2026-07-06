@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Local Claude Code</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div class="sidebarHeader">
+          <h1>Harness Agent</h1>
+          <button id="newConversation" class="newChatButton" type="button">新建会话</button>
+          <button id="skillsNav" class="sidebarNavButton" type="button">◇ 技能库</button>
+          <button id="knowledgeNav" class="sidebarNavButton" type="button">▦ 知识库</button>
+          <button id="modelNav" class="sidebarNavButton" type="button">◉ 模型配置</button>
+        </div>
+        <div class="sidebarPanel">
+          <div id="conversationList" class="conversationList" aria-label="历史对话"></div>
+        </div>
+      </aside>
+
+      <section class="chatPane">
+        <header class="chatHeader">
+          <div>
+            <div class="eyebrow">Harness Agent</div>
+            <h2 id="conversationTitle">Conversation</h2>
+          </div>
+        </header>
+
+        <div id="messages" class="messages" aria-live="polite"></div>
+
+        <section id="skillPage" class="skillPage hidden" aria-label="技能库">
+          <div class="skillShell">
+            <div class="skillToolbar">
+              <input id="skillSearch" class="skillSearchInput" type="search" placeholder="搜索 Skill" autocomplete="off" />
+            </div>
+            <div id="skillList" class="skillList" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="knowledgePage" class="knowledgePage hidden" aria-label="知识库">
+          <div class="knowledgeShell">
+            <div class="knowledgeToolbar">
+              <div>
+                <h3>知识库</h3>
+                <p>已导入的知识文件</p>
+              </div>
+              <button id="addKnowledge" class="knowledgeAddButton" type="button">添加</button>
+              <input id="knowledgeFileInput" class="hidden" type="file" />
+            </div>
+            <div id="knowledgeList" class="knowledgeList" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="modelPage" class="modelPage hidden" aria-label="模型配置">
+          <div class="modelShell">
+            <div class="modelToolbar">
+              <div>
+                <h3>模型配置</h3>
+                <p>自定义模型连接配置</p>
+              </div>
+              <button id="addModelConfig" class="modelAddButton" type="button">添加模型</button>
+            </div>
+            <div id="modelConfigList" class="modelConfigList" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <form id="composer" class="composer">
+          <div class="composerInput">
+            <textarea id="messageInput" rows="2" placeholder="Message Harness Agent, or type / for skills"></textarea>
+            <div id="skillMenu" class="slashMenu hidden" role="listbox" aria-label="Skill 快捷菜单"></div>
+            <select id="modelSelector" class="modelSelector" aria-label="模型选择"></select>
+          </div>
+          <button id="sendButton" type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
