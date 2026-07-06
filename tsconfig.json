@@ -1,13 +1,6 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/shared" },
-    { "path": "./packages/memory" },
-    { "path": "./packages/skill-engine" },
-    { "path": "./packages/mcp-runtime" },
-    { "path": "./packages/model-router" },
-    { "path": "./packages/agent-runtime" },
-    { "path": "./apps/api" }
+    { "path": "./apps/web" }
   ]
 }
-
