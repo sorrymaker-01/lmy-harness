@@ -1,0 +1,13 @@
+{
+  "name": "@agent/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/index.html dist/index.html && cp src/styles.css dist/styles.css",
+    "check": "tsc -p tsconfig.json --pretty false"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
