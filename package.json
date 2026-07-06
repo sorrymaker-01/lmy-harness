@@ -1,25 +1,22 @@
 {
-  "name": "vertical-agent-mcp-mvp",
+  "name": "local-claude-code",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/web"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "dev": "node --enable-source-maps apps/api/dist/server.js",
-    "check": "tsc -b --pretty false",
-    "test": "node --test apps/api/dist/**/*.test.js packages/*/dist/**/*.test.js",
-    "clean": "rm -rf apps/*/dist packages/*/dist"
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "tsc -p apps/web/tsconfig.json && cp apps/web/src/index.html apps/web/dist/index.html && cp apps/web/src/styles.css apps/web/dist/styles.css",
+    "build:server": "mkdir -p apps/server/bin && GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go build -o apps/server/bin/harness-server ./apps/server",
+    "dev": "GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go run ./apps/server",
+    "check": "npm run check:web && GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test ./apps/server/...",
+    "check:web": "tsc -p apps/web/tsconfig.json --pretty false",
+    "test": "GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test ./apps/server/...",
+    "clean": "rm -rf apps/web/dist apps/server/bin"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
     "typescript": "^5.7.2"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.20.2",
-    "zod": "^3.24.1"
   }
 }
