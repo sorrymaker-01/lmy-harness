@@ -9,11 +9,11 @@
   "scripts": {
     "build": "npm run build:web && npm run build:server",
     "build:web": "tsc -p apps/web/tsconfig.json && cp apps/web/src/index.html apps/web/dist/index.html && cp apps/web/src/styles.css apps/web/dist/styles.css",
-    "build:server": "mkdir -p apps/server/bin && GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go build -o apps/server/bin/harness-server ./apps/server",
-    "dev": "GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go run ./apps/server",
-    "check": "npm run check:web && GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test ./apps/server/...",
+    "build:server": "mkdir -p apps/server/bin && GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go build -tags sqlite_fts5 -o apps/server/bin/harness-server ./apps/server",
+    "dev": "GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go run -tags sqlite_fts5 ./apps/server",
+    "check": "npm run check:web && GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test -tags sqlite_fts5 ./apps/server/...",
     "check:web": "tsc -p apps/web/tsconfig.json --pretty false",
-    "test": "GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test ./apps/server/...",
+    "test": "GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test -tags sqlite_fts5 ./apps/server/...",
     "clean": "rm -rf apps/web/dist apps/server/bin"
   },
   "devDependencies": {
