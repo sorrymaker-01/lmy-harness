@@ -262,6 +262,7 @@ h2 {
   font-size: 13px;
 }
 
+.knowledgeBaseAddButton,
 .knowledgeAddButton,
 .modelAddButton {
   min-width: 82px;
@@ -274,15 +275,105 @@ h2 {
   font-weight: 700;
 }
 
+.knowledgeBaseAddButton:hover,
 .knowledgeAddButton:hover,
 .modelAddButton:hover {
   background: #303236;
+}
+
+.knowledgeBaseAddButton {
+  margin-left: auto;
+  background: #176b46;
+}
+
+.knowledgeBaseAddButton:hover {
+  background: #1f7a53;
+}
+
+.knowledgeLayout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.knowledgeBaseList {
+  display: grid;
+  gap: 8px;
+}
+
+.knowledgeBaseItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #deded8;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.knowledgeBaseItem.active {
+  border-color: #9bcdb4;
+  background: #f0f8f4;
+}
+
+.knowledgeBaseInfo {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.knowledgeBaseName {
+  overflow: hidden;
+  color: #25282d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.knowledgeBaseMeta {
+  color: #707783;
+  font-size: 12px;
+}
+
+.knowledgeBaseDeleteButton {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #ead3d3;
+  border-radius: 999px;
+  background: #fff7f7;
+  color: #9f2f2f;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.knowledgeBaseDeleteButton:hover {
+  background: #ffefef;
 }
 
 .knowledgeList,
 .modelConfigList {
   display: grid;
   gap: 10px;
+}
+
+.knowledgeDocumentsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 6px;
+  color: #25282d;
+}
+
+.knowledgeDocumentsHeader span {
+  color: #707783;
+  font-size: 12px;
 }
 
 .knowledgeItem {
@@ -489,7 +580,8 @@ h2 {
   font-weight: 700;
 }
 
-.modelField input {
+.modelField input,
+.modelField select {
   width: 100%;
   min-height: 36px;
   border: 1px solid #d6d6d0;
@@ -1352,9 +1444,14 @@ textarea {
     flex-direction: column;
   }
 
+  .knowledgeBaseAddButton,
   .knowledgeAddButton,
   .modelAddButton {
     width: 100%;
+  }
+
+  .knowledgeLayout {
+    grid-template-columns: 1fr;
   }
 
   .knowledgeItem {
