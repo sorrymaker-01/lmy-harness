@@ -93,6 +93,7 @@ apps/server/internal/claudecode
 - Node.js `20+`
 - npm
 - 支持 CGO 的 C/C++ 编译工具链
+- SQLite/FTS5/sqlite-vec 相关 Go 依赖会通过 Go module 下载，但需要 CGO 工具链完成编译
 
 macOS：
 
@@ -105,6 +106,47 @@ Linux Debian/Ubuntu：
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential
+```
+
+### SQLite、FTS5、sqlite-vec 与 reranker
+
+知识库检索依赖 SQLite、FTS5 和 sqlite-vec：
+
+- SQLite 驱动：`github.com/mattn/go-sqlite3`
+- SQLite FTS5：通过 `go-sqlite3` 的 `sqlite_fts5` build tag 启用，用于关键词召回。
+- sqlite-vec：`github.com/asg017/sqlite-vec-go-bindings`，用于本地向量索引和向量召回。
+- reranker：当前是项目内置重排逻辑，会合并关键词召回、向量召回和元数据召回结果，展开父 chunk，并做多样性排序；不需要额外安装 reranker 服务或模型。
+
+正常启动不需要单独安装 SQLite 或 sqlite-vec 动态库，执行 `npm run dev`、`npm run build`、`npm run check`、`npm run test` 时会使用已配置的 `sqlite_fts5` tag 编译后端：
+
+```bash
+npm run dev
+npm run build
+npm run check
+npm run test
+```
+
+如果直接运行 Go 命令，必须带上 `sqlite_fts5` tag：
+
+```bash
+go test -tags sqlite_fts5 ./apps/server/...
+go run -tags sqlite_fts5 ./apps/server
+```
+
+可选：如果需要手工检查本地数据库，可以安装 SQLite CLI，但它不是运行服务的必需依赖。
+
+macOS：
+
+```bash
+brew install sqlite
+sqlite3 --version
+```
+
+Linux Debian/Ubuntu：
+
+```bash
+sudo apt-get install -y sqlite3
+sqlite3 --version
 ```
 
 ### 知识库 PDF 导入需要
