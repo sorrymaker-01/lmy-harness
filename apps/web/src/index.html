@@ -28,7 +28,7 @@
         <header class="chatHeader">
           <div>
             <div class="eyebrow">Lmy' Harness Agent</div>
-            <h2 id="conversationTitle">Conversation</h2>
+            <h2 id="conversationTitle">新对话</h2>
           </div>
         </header>
 
@@ -77,18 +77,27 @@
 
         <form id="composer" class="composer">
           <div class="composerInput">
-            <textarea id="messageInput" rows="2" placeholder="询问 Lmy' Harness Agent，或输入 / 使用技能"></textarea>
+            <div class="composerTextAreaWrap">
+              <textarea id="messageInput" rows="2" placeholder="询问 Lmy' Harness Agent，或输入 / 使用技能"></textarea>
+              <button id="composerSettingsButton" class="composerSettingsButton" type="button" aria-label="对话设置" aria-expanded="false"><span class="composerSettingsIcon" aria-hidden="true">⚙</span></button>
+              <div id="composerSettingsPopover" class="composerSettingsPopover hidden" role="dialog" aria-label="对话设置"></div>
+            </div>
             <div id="skillMenu" class="slashMenu hidden" role="listbox" aria-label="Skill 快捷菜单"></div>
             <div class="composerControls">
-              <label class="composerControlGroup">
+              <label class="composerControlGroup hiddenNativeControl">
                 <span>知识库选择</span>
                 <select id="ragKnowledgeSelector" class="knowledgeSelector" aria-label="知识库选择"></select>
               </label>
-              <label class="composerControlGroup">
+              <label class="composerControlGroup hiddenNativeControl">
                 <span>模型选择</span>
                 <select id="primaryModelSelector" class="modelSelector" aria-label="模型选择"></select>
               </label>
-              <div class="multiModelPicker">
+              <div class="primaryModelPicker">
+                <button id="primaryModelToggle" class="primaryModelToggle" type="button" aria-expanded="false">模型选择</button>
+                <div id="primaryModelPopover" class="primaryModelPopover hidden" role="dialog" aria-label="模型选择"></div>
+              </div>
+              <div id="composerSelectionSummary" class="composerSelectionSummary" aria-live="polite"></div>
+              <div class="multiModelPicker hiddenNativeControl">
                 <button id="multiModelToggle" class="multiModelToggle" type="button" aria-expanded="false">开启多模型回答</button>
                 <div id="multiModelPopover" class="multiModelPopover hidden" role="dialog" aria-label="多模型回答模型选择"></div>
               </div>

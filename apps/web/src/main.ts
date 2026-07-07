@@ -250,6 +250,8 @@ type ActionMenuItem = {
   onClick: () => void | Promise<void>;
 };
 
+type ComposerSettingsPanel = "root" | "knowledge" | "multi";
+
 const conversationListEl = mustQuery<HTMLDivElement>("#conversationList");
 const conversationTitleEl = mustQuery<HTMLHeadingElement>("#conversationTitle");
 const messagesEl = mustQuery<HTMLDivElement>("#messages");
@@ -276,10 +278,15 @@ const modelPageEl = mustQuery<HTMLElement>("#modelPage");
 const modelConfigListEl = mustQuery<HTMLDivElement>("#modelConfigList");
 const addModelConfigEl = mustQuery<HTMLButtonElement>("#addModelConfig");
 const primaryModelSelectorEl = mustQuery<HTMLSelectElement>("#primaryModelSelector");
+const primaryModelToggleEl = mustQuery<HTMLButtonElement>("#primaryModelToggle");
+const primaryModelPopoverEl = mustQuery<HTMLDivElement>("#primaryModelPopover");
 const multiModelToggleEl = mustQuery<HTMLButtonElement>("#multiModelToggle");
 const multiModelPopoverEl = mustQuery<HTMLDivElement>("#multiModelPopover");
 const modelModeHintEl = mustQuery<HTMLDivElement>("#modelModeHint");
 const ragKnowledgeSelectorEl = mustQuery<HTMLSelectElement>("#ragKnowledgeSelector");
+const composerSettingsButtonEl = mustQuery<HTMLButtonElement>("#composerSettingsButton");
+const composerSettingsPopoverEl = mustQuery<HTMLDivElement>("#composerSettingsPopover");
+const composerSelectionSummaryEl = mustQuery<HTMLDivElement>("#composerSelectionSummary");
 const skillMenuEl = mustQuery<HTMLDivElement>("#skillMenu");
 const messageLocatorEl = mustQuery<HTMLElement>("#messageLocator");
 const chatPaneEl = mustQuery<HTMLElement>(".chatPane");
@@ -310,6 +317,9 @@ let expandedSkillName: string | null = null;
 let editingModelConfigId: string | null = null;
 let expandedModelConfigId: string | null = null;
 let multiModelPopoverOpen = false;
+let primaryModelPopoverOpen = false;
+let composerSettingsPopoverOpen = false;
+let composerSettingsPanel: ComposerSettingsPanel = "root";
 let modalCancelHandler: (() => void) | null = null;
 let sidebarCollapsed = window.localStorage.getItem("sidebarCollapsed") === "true";
 
@@ -355,6 +365,26 @@ primaryModelSelectorEl.addEventListener("change", () => {
   renderModelSelector();
 });
 
+primaryModelToggleEl.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (isStreaming || primaryModelToggleEl.disabled) return;
+  primaryModelPopoverOpen = !primaryModelPopoverOpen;
+  composerSettingsPopoverOpen = false;
+  renderModelSelector();
+});
+
+composerSettingsButtonEl.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (isStreaming || composerSettingsButtonEl.disabled) return;
+  composerSettingsPopoverOpen = !composerSettingsPopoverOpen;
+  if (composerSettingsPopoverOpen) {
+    composerSettingsPanel = "knowledge";
+    primaryModelPopoverOpen = false;
+  }
+  renderComposerSettingsPopover();
+  renderPrimaryModelPicker();
+});
+
 multiModelToggleEl.addEventListener("click", (event) => {
   event.stopPropagation();
   if (isStreaming) return;
@@ -363,16 +393,42 @@ multiModelToggleEl.addEventListener("click", (event) => {
 });
 
 document.addEventListener("click", (event) => {
-  if (!multiModelPopoverOpen) return;
   const target = event.target;
-  if (target instanceof Node && (multiModelPopoverEl.contains(target) || multiModelToggleEl.contains(target))) {
-    return;
+  if (multiModelPopoverOpen) {
+    if (target instanceof Node && (multiModelPopoverEl.contains(target) || multiModelToggleEl.contains(target))) {
+      return;
+    }
+    multiModelPopoverOpen = false;
+    renderModelSelector();
   }
-  multiModelPopoverOpen = false;
-  renderModelSelector();
+  if (primaryModelPopoverOpen) {
+    if (target instanceof Node && (primaryModelPopoverEl.contains(target) || primaryModelToggleEl.contains(target))) {
+      return;
+    }
+    primaryModelPopoverOpen = false;
+    renderPrimaryModelPicker();
+  }
+  if (composerSettingsPopoverOpen) {
+    if (target instanceof Node && (composerSettingsPopoverEl.contains(target) || composerSettingsButtonEl.contains(target))) {
+      return;
+    }
+    composerSettingsPopoverOpen = false;
+    composerSettingsPanel = "root";
+    renderComposerSettingsPopover();
+  }
 });
 
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && (primaryModelPopoverOpen || composerSettingsPopoverOpen || multiModelPopoverOpen)) {
+    primaryModelPopoverOpen = false;
+    composerSettingsPopoverOpen = false;
+    composerSettingsPanel = "root";
+    multiModelPopoverOpen = false;
+    renderModelSelector();
+    renderComposerSettingsPopover();
+    event.preventDefault();
+    return;
+  }
   if (event.key === "Escape" && !modalRootEl.classList.contains("hidden")) {
     event.preventDefault();
     closeAppModal(true);
@@ -381,11 +437,9 @@ document.addEventListener("keydown", (event) => {
 
 ragKnowledgeSelectorEl.addEventListener("change", () => {
   activeRagKnowledgeBaseId = ragKnowledgeSelectorEl.value || "";
-  if (activeRagKnowledgeBaseId) {
-    window.localStorage.setItem("activeRagKnowledgeBaseId", activeRagKnowledgeBaseId);
-  } else {
-    window.localStorage.removeItem("activeRagKnowledgeBaseId");
-  }
+  saveRagKnowledgeSelection();
+  renderComposerSettingsPopover();
+  renderComposerSelectionSummary();
 });
 
 skillsNavEl.addEventListener("click", async () => {
@@ -461,7 +515,7 @@ newConversationEl.addEventListener("click", async () => {
     setView("chat");
     const response = await request<{ conversation: Conversation }>("/api/conversations", {
       method: "POST",
-      body: JSON.stringify({ title: "New conversation" })
+      body: JSON.stringify({ title: "新对话" })
     });
     activeConversationId = response.conversation.id;
     await loadConversations();
@@ -474,27 +528,24 @@ newConversationEl.addEventListener("click", async () => {
 void boot().catch(showPageError);
 
 async function boot(): Promise<void> {
-  await loadConversations();
+  await loadConversations(false);
   await loadModelConfigs().catch(showModelError);
   await loadKnowledgeBasesForSelector().catch(showKnowledgeError);
   await loadSkills().catch((error) => {
     showSkillError(error);
   });
-  if (!activeConversationId) {
-    activeConversationId = conversations[0]?.id ?? "";
-  }
   await loadMessages();
 }
 
-async function loadConversations(): Promise<void> {
+async function loadConversations(autoSelect = true): Promise<void> {
   const body = await request<ConversationsResponse>("/api/conversations");
   conversations = body.conversations ?? [];
-  if (!activeConversationId) {
+  if (autoSelect && !activeConversationId) {
     activeConversationId = body.defaultConversationId || conversations[0]?.id || "";
   }
   const active = conversations.find((item) => item.id === activeConversationId);
   if (active && currentView === "chat") {
-    conversationTitleEl.textContent = active.title || "Conversation";
+    conversationTitleEl.textContent = active.title || "新对话";
   }
   renderConversations();
 }
@@ -739,13 +790,12 @@ async function deleteConversation(id: string): Promise<void> {
 
 async function loadMessages(): Promise<void> {
   if (!activeConversationId) {
-    messagesEl.innerHTML = `<div class="emptyState">请选择一个会话。</div>`;
-    conversationTitleEl.textContent = "Conversation";
-    setEmptyChat(true);
+    conversationTitleEl.textContent = "新会话";
+    renderMessages([]);
     return;
   }
   const conversation = conversations.find((item) => item.id === activeConversationId);
-  conversationTitleEl.textContent = conversation?.title || "Conversation";
+  conversationTitleEl.textContent = conversation?.title || "新对话";
   const body = await request<MessagesResponse>(`/api/conversations/${activeConversationId}/messages`);
   renderMessages(body.messages ?? []);
 }
@@ -798,11 +848,11 @@ async function sendMessage(content: string): Promise<void> {
 
 async function ensureActiveConversation(): Promise<void> {
   if (activeConversationId) return;
-  await loadConversations();
+  await loadConversations(false);
   if (activeConversationId) return;
   const response = await request<{ conversation: Conversation }>("/api/conversations", {
     method: "POST",
-    body: JSON.stringify({ title: "New conversation" })
+    body: JSON.stringify({ title: "新对话" })
   });
   activeConversationId = response.conversation.id;
   await loadConversations();
@@ -1087,7 +1137,7 @@ function setView(view: "chat" | "skills" | "knowledge" | "models"): void {
     return;
   }
   const conversation = conversations.find((item) => item.id === activeConversationId);
-  conversationTitleEl.textContent = conversation?.title || "Conversation";
+  conversationTitleEl.textContent = conversation?.title || "新会话";
   renderConversations();
   renderMessageLocator();
 }
@@ -1396,6 +1446,219 @@ function renderRagKnowledgeSelector(): void {
   }
 
   ragKnowledgeSelectorEl.value = activeRagKnowledgeBaseId;
+  renderComposerSettingsPopover();
+  renderComposerSelectionSummary();
+}
+
+function saveRagKnowledgeSelection(): void {
+  if (activeRagKnowledgeBaseId) {
+    window.localStorage.setItem("activeRagKnowledgeBaseId", activeRagKnowledgeBaseId);
+  } else {
+    window.localStorage.removeItem("activeRagKnowledgeBaseId");
+  }
+}
+
+function renderComposerSelectionSummary(): void {
+  const items: string[] = [];
+  const knowledge = knowledgeBases.find((base) => base.id === activeRagKnowledgeBaseId);
+  if (knowledge) {
+    items.push(`知识库：${knowledge.name || "Untitled"}`);
+  }
+  if (secondaryModelConfigIds.length > 0) {
+    items.push(`多模型：${secondaryModelConfigIds.length + 1} 个模型`);
+  }
+  composerSelectionSummaryEl.textContent = items.join(" · ");
+  composerSelectionSummaryEl.classList.toggle("hidden", items.length === 0);
+}
+
+function renderPrimaryModelPicker(reasoningConfigs = modelConfigs.filter((config) => modelConfigType(config) === "reasoning")): void {
+  primaryModelToggleEl.disabled = isStreaming || reasoningConfigs.length === 0;
+  primaryModelToggleEl.setAttribute("aria-expanded", String(primaryModelPopoverOpen));
+  const activeLabel = activeModelConfigId && reasoningConfigs.length > 0 ? modelDisplayName(activeModelConfigId) : "无推理模型";
+  primaryModelToggleEl.innerHTML = `<span class="pickerLabel">模型</span><span class="pickerValue">${escapeHTML(activeLabel)}</span><span class="pickerChevron">⌄</span>`;
+  primaryModelPopoverEl.innerHTML = "";
+  primaryModelPopoverEl.classList.toggle("hidden", !primaryModelPopoverOpen);
+  if (!primaryModelPopoverOpen) return;
+
+  const title = document.createElement("div");
+  title.className = "pickerMenuTitle";
+  title.textContent = "模型选择";
+  primaryModelPopoverEl.appendChild(title);
+
+  if (reasoningConfigs.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "pickerMenuEmpty";
+    empty.textContent = "请先在模型配置中新增推理模型。";
+    primaryModelPopoverEl.appendChild(empty);
+    return;
+  }
+
+  for (const config of reasoningConfigs) {
+    const selected = config.id === activeModelConfigId;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `pickerMenuItem${selected ? " checked" : ""}`;
+    button.innerHTML = `<span>${escapeHTML(modelConfigLabel(config))}</span><span class="pickerCheck">${selected ? "✓" : ""}</span>`;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      activeModelConfigId = config.id;
+      secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => id !== config.id).slice(0, 2);
+      saveModelSelection();
+      primaryModelPopoverOpen = false;
+      renderModelSelector();
+    });
+    primaryModelPopoverEl.appendChild(button);
+  }
+}
+
+function renderComposerSettingsPopover(): void {
+  composerSettingsButtonEl.disabled = isStreaming;
+  composerSettingsButtonEl.classList.toggle("active", composerSettingsPopoverOpen);
+  composerSettingsButtonEl.setAttribute("aria-expanded", String(composerSettingsPopoverOpen));
+  composerSettingsPopoverEl.innerHTML = "";
+  composerSettingsPopoverEl.classList.toggle("hidden", !composerSettingsPopoverOpen);
+  if (!composerSettingsPopoverOpen) return;
+  if (composerSettingsPanel === "root") {
+    composerSettingsPanel = "knowledge";
+  }
+
+  const title = document.createElement("div");
+  title.className = "settingsMenuTitle";
+  title.textContent = "对话设置";
+  composerSettingsPopoverEl.appendChild(title);
+
+  const cascade = document.createElement("div");
+  cascade.className = "settingsCascade";
+  const root = document.createElement("div");
+  root.className = "settingsCascadeRoot";
+  root.append(
+    settingsRootItem("knowledge", "使用知识库", knowledgeSettingSummary(), Boolean(activeRagKnowledgeBaseId)),
+    settingsRootItem("multi", "使用多模型回答", multiModelSettingSummary(), secondaryModelConfigIds.length > 0)
+  );
+  const detail = document.createElement("div");
+  detail.className = "settingsCascadeDetail";
+  const detailTitle = document.createElement("div");
+  detailTitle.className = "settingsSubHeader";
+  detailTitle.textContent = composerSettingsPanel === "knowledge" ? "使用知识库" : "使用多模型回答";
+  detail.appendChild(detailTitle);
+
+  if (composerSettingsPanel === "knowledge") {
+    renderKnowledgeSettingsList(detail);
+  } else {
+    renderMultiModelSettingsList(detail);
+  }
+  cascade.append(root, detail);
+  composerSettingsPopoverEl.appendChild(cascade);
+}
+
+function settingsRootItem(panel: ComposerSettingsPanel, label: string, summary: string, checked: boolean): HTMLElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  const active = panel === composerSettingsPanel;
+  button.className = `settingsRootItem${checked ? " checked" : ""}${active ? " active" : ""}`;
+  button.innerHTML = `<span class="settingsRootMain"><span>${escapeHTML(label)}</span><small>${escapeHTML(summary)}</small></span><span class="settingsRootMark">${checked ? "✓" : "›"}</span>`;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    composerSettingsPanel = panel;
+    renderComposerSettingsPopover();
+  });
+  return button;
+}
+
+function renderKnowledgeSettingsList(container: HTMLElement): void {
+  const none = document.createElement("button");
+  none.type = "button";
+  none.className = `settingsOption${activeRagKnowledgeBaseId ? "" : " checked"}`;
+  none.innerHTML = `<span>不使用知识库</span><span class="settingsCheck">${activeRagKnowledgeBaseId ? "" : "✓"}</span>`;
+  none.addEventListener("click", (event) => {
+    event.stopPropagation();
+    activeRagKnowledgeBaseId = "";
+    ragKnowledgeSelectorEl.value = "";
+    saveRagKnowledgeSelection();
+    renderComposerSettingsPopover();
+    renderComposerSelectionSummary();
+  });
+  container.appendChild(none);
+
+  if (knowledgeBases.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "settingsEmpty";
+    empty.textContent = "暂无知识库。";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const base of knowledgeBases) {
+    const selected = base.id === activeRagKnowledgeBaseId;
+    const hasContent = (base.childChunkCount ?? 0) > 0;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `settingsOption${selected ? " checked" : ""}`;
+    button.innerHTML = `<span class="settingsOptionMain"><span>${escapeHTML(base.name || "Untitled")}</span><small>${hasContent ? `${base.documentCount || 0} docs` : "空"}</small></span><span class="settingsCheck">${selected ? "✓" : ""}</span>`;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      activeRagKnowledgeBaseId = base.id;
+      ragKnowledgeSelectorEl.value = base.id;
+      saveRagKnowledgeSelection();
+      renderComposerSettingsPopover();
+      renderComposerSelectionSummary();
+    });
+    container.appendChild(button);
+  }
+}
+
+function renderMultiModelSettingsList(container: HTMLElement): void {
+  const reasoningConfigs = modelConfigs.filter((config) => modelConfigType(config) === "reasoning");
+  const active = reasoningConfigs.find((config) => config.id === activeModelConfigId);
+  if (active) {
+    const primary = document.createElement("div");
+    primary.className = "settingsOption disabled checked";
+    primary.innerHTML = `<span class="settingsOptionMain"><span>${escapeHTML(modelConfigLabel(active))}</span><small>主模型</small></span><span class="settingsCheck">✓</span>`;
+    container.appendChild(primary);
+  }
+
+  const candidates = reasoningConfigs.filter((config) => config.id !== activeModelConfigId);
+  if (candidates.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "settingsEmpty";
+    empty.textContent = "暂无可选副模型。";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const config of candidates) {
+    const checked = secondaryModelConfigIds.includes(config.id);
+    const disabled = !checked && secondaryModelConfigIds.length >= 2;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `settingsOption${checked ? " checked" : ""}`;
+    button.disabled = disabled || isStreaming;
+    button.innerHTML = `<span class="settingsOptionMain"><span>${escapeHTML(modelConfigLabel(config))}</span><small>${disabled ? "最多选择 2 个副模型" : "副模型"}</small></span><span class="settingsCheck">${checked ? "✓" : ""}</span>`;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (button.disabled) return;
+      if (checked) {
+        secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => id !== config.id);
+      } else {
+        secondaryModelConfigIds = [...secondaryModelConfigIds, config.id].filter((id, index, ids) => ids.indexOf(id) === index).slice(0, 2);
+      }
+      saveModelSelection();
+      renderModelSelector();
+      composerSettingsPanel = "multi";
+      composerSettingsPopoverOpen = true;
+      renderComposerSettingsPopover();
+    });
+    container.appendChild(button);
+  }
+}
+
+function knowledgeSettingSummary(): string {
+  const base = knowledgeBases.find((item) => item.id === activeRagKnowledgeBaseId);
+  return base ? base.name || "Untitled" : "未启用";
+}
+
+function multiModelSettingSummary(): string {
+  return secondaryModelConfigIds.length > 0 ? `${secondaryModelConfigIds.length + 1} 个模型` : "未启用";
 }
 
 function createActionMenu(label: string, items: ActionMenuItem[]): HTMLElement {
@@ -1451,6 +1714,9 @@ function renderModelSelector(): void {
     multiModelToggleEl.setAttribute("aria-expanded", "false");
     multiModelPopoverEl.classList.add("hidden");
     modelModeHintEl.textContent = "请先配置推理模型。";
+    renderPrimaryModelPicker([]);
+    renderComposerSettingsPopover();
+    renderComposerSelectionSummary();
     return;
   }
   normalizeModelSelection();
@@ -1473,6 +1739,9 @@ function renderModelSelector(): void {
   modelModeHintEl.textContent = selectedModels.length > 1
     ? `多模型回答已开启：${modelDisplayName(activeModelConfigId)} + ${secondaryModelConfigIds.map(modelDisplayName).join(" + ")}。默认使用“模型选择”中的模型作为后续上下文。`
     : "默认只使用模型选择中的模型回答；点击“开启多模型回答”可选择最多 2 个副模型并列回答。";
+  renderPrimaryModelPicker(reasoningConfigs);
+  renderComposerSettingsPopover();
+  renderComposerSelectionSummary();
 }
 
 function renderMultiModelPopover(reasoningConfigs: ModelConfig[]): void {
@@ -1744,6 +2013,7 @@ function renderModelConfigEditor(config: ModelConfig | null, options: { onCancel
   if (config?.id === "default") {
     type.select.value = "reasoning";
     type.select.disabled = true;
+    type.sync();
   }
   const provider = createLabeledInput("Provider", config?.provider || "openai-compatible", "text");
   const apiKey = createLabeledInput("API Key", "", "password");
@@ -1937,13 +2207,17 @@ function createLabeledInput(labelText: string, value: string, type: string): { w
   return { wrapper, input };
 }
 
-function createLabeledSelect(labelText: string, value: string, options: Array<{ value: string; label: string }>): { wrapper: HTMLElement; select: HTMLSelectElement } {
-  const wrapper = document.createElement("label");
-  wrapper.className = "modelField";
+function createLabeledSelect(labelText: string, value: string, options: Array<{ value: string; label: string }>): { wrapper: HTMLElement; select: HTMLSelectElement; sync: () => void } {
+  const wrapper = document.createElement("div");
+  wrapper.className = "modelField customModelSelectField";
   const label = document.createElement("span");
   label.textContent = labelText;
   const select = document.createElement("select");
+  select.className = "modelNativeSelect";
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
   select.disabled = isStreaming;
+  const optionByValue = new Map(options.map((option) => [option.value, option.label]));
   for (const option of options) {
     const item = document.createElement("option");
     item.value = option.value;
@@ -1951,8 +2225,73 @@ function createLabeledSelect(labelText: string, value: string, options: Array<{ 
     select.appendChild(item);
   }
   select.value = value;
-  wrapper.append(label, select);
-  return { wrapper, select };
+
+  const customSelect = document.createElement("div");
+  customSelect.className = "customModelSelect";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "customModelSelectButton";
+  button.setAttribute("aria-haspopup", "listbox");
+  button.setAttribute("aria-expanded", "false");
+  button.disabled = select.disabled;
+  const menu = document.createElement("div");
+  menu.className = "customModelSelectMenu hidden";
+  menu.setAttribute("role", "listbox");
+
+  const closeMenu = (): void => {
+    menu.classList.add("hidden");
+    button.setAttribute("aria-expanded", "false");
+  };
+  const selectedLabel = (): string => optionByValue.get(select.value) || options[0]?.label || "请选择";
+  const itemButtons: HTMLButtonElement[] = [];
+  const sync = (): void => {
+    button.disabled = select.disabled;
+    button.innerHTML = `<span class="customModelSelectValue">${escapeHTML(selectedLabel())}</span><span class="pickerChevron">⌄</span>`;
+    for (const item of itemButtons) {
+      const checked = item.dataset.value === select.value;
+      item.classList.toggle("checked", checked);
+      item.setAttribute("aria-selected", String(checked));
+      const check = item.querySelector<HTMLElement>(".customModelSelectCheck");
+      if (check) check.textContent = checked ? "✓" : "";
+    }
+  };
+
+  for (const option of options) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "customModelSelectItem";
+    item.dataset.value = option.value;
+    item.setAttribute("role", "option");
+    item.innerHTML = `<span>${escapeHTML(option.label)}</span><span class="customModelSelectCheck"></span>`;
+    item.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (select.disabled) return;
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      sync();
+      closeMenu();
+    });
+    itemButtons.push(item);
+    menu.appendChild(item);
+  }
+
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (select.disabled) return;
+    const shouldOpen = menu.classList.contains("hidden");
+    menu.classList.toggle("hidden", !shouldOpen);
+    button.setAttribute("aria-expanded", String(shouldOpen));
+  });
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Node && wrapper.contains(event.target)) return;
+    closeMenu();
+  });
+  select.addEventListener("change", sync);
+
+  customSelect.append(button, menu);
+  wrapper.append(label, customSelect, select);
+  sync();
+  return { wrapper, select, sync };
 }
 
 function modelConfigType(config?: ModelConfig): "reasoning" | "embedding" {
@@ -1964,8 +2303,19 @@ function defaultReasoningModelConfigId(): string {
 }
 
 function modelConfigLabel(config: ModelConfig): string {
-  const typeLabel = modelConfigType(config) === "embedding" ? "向量" : "推理";
-  return `${config.id} · ${typeLabel} · ${config.model || "model"}`;
+  if (modelConfigType(config) === "embedding") {
+    return `${config.id} · 向量 · ${config.model || "model"}`;
+  }
+  return `${config.id} · ${config.model || "model"}`;
+}
+
+function escapeHTML(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function nextModelConfigID(): string {

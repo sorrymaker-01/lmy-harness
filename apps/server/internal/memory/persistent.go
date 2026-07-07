@@ -132,7 +132,7 @@ func (s *PersistentStore) upsertConversation(conversation contracts.Conversation
 			title = excluded.title,
 			updated_at = excluded.updated_at`,
 		conversation.ID,
-		nonEmpty(conversation.Title, "New conversation"),
+		nonEmpty(conversation.Title, "新对话"),
 		formatTime(conversation.CreatedAt),
 		formatTime(conversation.UpdatedAt),
 	)

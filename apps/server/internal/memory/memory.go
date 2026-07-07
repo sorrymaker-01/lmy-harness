@@ -54,7 +54,7 @@ func (s *InMemoryStore) CreateConversation(title string) contracts.Conversation 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if strings.TrimSpace(title) == "" {
-		title = "New conversation"
+		title = "新对话"
 	}
 	conversation := contracts.Conversation{
 		ID:        shared.NewID("conv"),

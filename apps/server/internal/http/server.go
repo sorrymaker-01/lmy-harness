@@ -154,7 +154,7 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 	if existing := store.ListConversations(); len(existing) > 0 {
 		defaultConversationID = existing[0].ID
 	} else {
-		defaultConversation := store.CreateConversation("New conversation")
+		defaultConversation := store.CreateConversation("新对话")
 		defaultConversationID = defaultConversation.ID
 	}
 	httpServer := &HTTPServer{
@@ -1025,7 +1025,7 @@ func (s *HTTPServer) visibleConversations() []contracts.Conversation {
 
 func (s *HTTPServer) reusableInitialConversation(title string) (contracts.Conversation, bool) {
 	title = strings.TrimSpace(title)
-	if title != "" && !strings.EqualFold(title, "New conversation") {
+	if title != "" && title != "新对话" && !strings.EqualFold(title, "New conversation") {
 		return contracts.Conversation{}, false
 	}
 	for _, conversation := range s.store.ListConversations() {
@@ -1037,7 +1037,8 @@ func (s *HTTPServer) reusableInitialConversation(title string) (contracts.Conver
 }
 
 func isInitialConversation(conversation contracts.Conversation, messages []contracts.Message) bool {
-	return strings.TrimSpace(conversation.Title) == "New conversation" && len(messages) == 0
+	title := strings.TrimSpace(conversation.Title)
+	return (title == "新对话" || strings.EqualFold(title, "New conversation")) && len(messages) == 0
 }
 
 func (s *HTTPServer) currentModelConfigRecord() (state.ModelConfigRecord, error) {
