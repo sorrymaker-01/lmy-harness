@@ -51,6 +51,10 @@ func TestStartupContextDiscoversProjectFiles(t *testing.T) {
 	if ctx.StateDBPath() != expectedStateDBPath {
 		t.Fatalf("unexpected state db path: %q", ctx.StateDBPath())
 	}
+	expectedKnowledgeDir := filepath.Join(projectRoot, "apps", "server", "data", "knowledge")
+	if ctx.KnowledgeDir() != expectedKnowledgeDir {
+		t.Fatalf("unexpected knowledge dir: %q", ctx.KnowledgeDir())
+	}
 }
 
 func writeFile(t *testing.T, path string, content string) {
