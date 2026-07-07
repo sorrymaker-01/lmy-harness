@@ -1,41 +1,135 @@
 # Lmy' Harness Agent
 
-Monorepo for a local task-execution and troubleshooting agent:
+Lmy' Harness Agent 是一个本地运行的智能助手系统，用于对话式任务执行、工具调用、知识库问答、多模型对比和深度排疑解惑。项目采用前后端一体的 monorepo 结构：前端提供聊天和配置界面，后端负责 Agent 循环、模型调用、工具运行、知识库检索、MCP 集成和持久化。
 
-- Frontend: TypeScript chat UI in `apps/web`
-- Backend: Go + CloudWeGo Hertz in `apps/server`
+## 核心功能
 
-The backend runs an agentic loop with model calls, tool calls, prompt-only skills, project context loading, MCP configuration discovery, SQLite-backed sessions, short memory, working memory, and trace streaming.
+- 对话式 Agent：支持多轮 `用户 -> 模型 -> 工具调用 -> 工具结果 -> 模型 -> 最终回答` 的执行循环。
+- 实时流式输出：通过 SSE 推送模型过程、工具事件、最终回答和错误信息。
+- 模型配置：支持多个 OpenAI-compatible 推理模型配置，并区分推理模型与向量模型。
+- 多模型回答：可选择主模型和最多两个副模型并行回答，再选择用于后续上下文的 canonical answer。
+- 本地工具调用：内置 shell、文件读取/编辑、搜索、子 Agent、WebFetch、WebSearch、向用户提问等工具。
+- Skill 提示包：支持从 `skills/**/SKILL.md`、`.claude/skills/**/SKILL.md`、用户目录加载 prompt-only skill。
+- 本地知识库 RAG：支持知识库创建、文件导入、文本切块、关键词召回、向量召回和混合检索。
+- MCP 集成：从 `.mcp.json` 和兼容配置中发现 MCP server，并将 MCP tool 注册到运行时。
+- 记忆与追踪：会话、消息、短期记忆、工作记忆、trace、模型配置、工具配置、skill 配置和知识库数据均可持久化。
 
-## Requirements
+## 架构概览
 
-- Go 1.22.5+
-- Node.js 20+
-- Poppler `pdftotext` for PDF knowledge import
-- CGO-capable C toolchain for the embedded sqlite-vec binding
+```text
+apps/web
+  TypeScript 单页应用
+  聊天页 / Skill 管理 / 知识库管理 / 模型配置 / Markdown 预览
 
-Install Poppler locally before importing PDFs:
+apps/server
+  Go + CloudWeGo Hertz HTTP 服务
+  静态资源托管 + REST API + SSE 流式接口
+
+apps/server/internal/agent
+  多轮 Agent 循环、system prompt 构造、上下文压缩、skill 渐进加载、知识库上下文注入
+
+apps/server/internal/model
+  OpenAI-compatible chat completions 与 embeddings 适配器
+
+apps/server/internal/runtime
+  工具注册、工具 schema 导出、工具调用分发、风险策略
+
+apps/server/internal/tools
+  本地工具实现，包括 shell、文件、grep/glob、子 Agent、WebFetch、WebSearch、AskUserQuestion
+
+apps/server/internal/knowledge
+  文件导入、文本抽取、切块、SQLite/FTS5 索引、sqlite-vec 向量索引、混合检索
+
+apps/server/internal/memory
+  内存态会话与 SQLite 持久化会话、消息、短期记忆、工作记忆、trace
+
+apps/server/internal/state
+  SQLite 状态表：模型配置、工具配置、MCP 配置、知识库元数据、多模型回答记录
+
+apps/server/internal/skills
+  Skill 注册、配置、启用/禁用、详情读取
+
+apps/server/internal/mcp
+  MCP stdio client、server 初始化、tool 注册
+
+apps/server/internal/claudecode
+  启动上下文发现：CLAUDE.md、规则、MCP 配置、skill 目录、settings、auto memory
+```
+
+## 关键组件
+
+| 组件 | 作用 |
+| --- | --- |
+| Web UI | 用户入口，负责对话、选择模型/知识库、管理 skill、知识库和模型配置 |
+| HTTP Server | 提供 REST API、SSE 流式回答和前端静态资源托管 |
+| Agent Loop | 组织模型输入、工具调用、工具结果、知识库上下文和最终回答 |
+| Model Adapter | 将系统内部消息转换为 OpenAI-compatible `/chat/completions` 和 embeddings 请求 |
+| Tool Runtime | 管理本地工具和 MCP 工具，输出工具 schema 给模型 |
+| Skill Registry | 管理 prompt-only skill，按用户选择、轻量匹配或模型请求渐进加载 |
+| Knowledge Store | 管理知识库、文件导入、切块、FTS5 召回、sqlite-vec 召回和检索日志 |
+| State Store | 使用 SQLite 保存配置、会话、多模型响应、知识库元数据和运行状态 |
+| Memory Store | 保存短期记忆、工作记忆和 trace，支撑跨轮对话上下文 |
+
+## 数据与存储
+
+默认持久化目录在 `apps/server/data`：
+
+- `apps/server/data/state.db`：SQLite 主状态库。
+- `apps/server/data/knowledge/files`：导入的原始文件。
+- `apps/server/data/knowledge/parsed`：解析后的文本文件。
+
+知识库检索使用：
+
+- SQLite 普通表保存知识库、文档、版本、chunk、ingestion job、检索日志。
+- SQLite FTS5 表 `document_chunks_fts` 做关键词召回。
+- sqlite-vec 表 `document_chunk_vectors` 做向量召回。
+- 父子 chunk 结构：子 chunk 用于召回，父 chunk 用于注入更完整上下文。
+
+## 需要安装的依赖
+
+### 必需
+
+- Go `1.22.5+`
+- Node.js `20+`
+- npm
+- 支持 CGO 的 C/C++ 编译工具链
+
+macOS：
+
+```bash
+xcode-select --install
+```
+
+Linux Debian/Ubuntu：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential
+```
+
+### 知识库 PDF 导入需要
+
+PDF 文件导入依赖 Poppler 的 `pdftotext`。
+
+macOS：
 
 ```bash
 brew install poppler
 pdftotext -v
 ```
 
-## Scripts
+Linux Debian/Ubuntu：
 
-- `npm install`
-- `npm run build`
-- `npm run dev`
-- `npm run check`
+```bash
+sudo apt-get install -y poppler-utils
+pdftotext -v
+```
 
-The Go server serves the built frontend and API at `http://127.0.0.1:3000`.
+### 模型服务
 
-Model credentials are stored in SQLite and can be managed from the model configuration page. Each model config has a type:
+系统默认使用 OpenAI-compatible API。至少需要配置一个推理模型 API key。向量检索需要额外配置 embedding 模型。
 
-- `reasoning`: chat/completions model used by conversations
-- `embedding`: embeddings model used by sqlite-vec vector indexing
-
-Reasoning and embedding configs use separate API keys and base URLs. On first startup the default reasoning row is seeded from environment variables, which also remain as a fallback:
+推理模型环境变量：
 
 ```bash
 export OPENAI_API_KEY=...
@@ -43,66 +137,101 @@ export OPENAI_BASE_URL=https://example.com/api/v3
 export OPENAI_MODEL=...
 ```
 
-An optional default embedding row is seeded separately:
+向量模型环境变量：
 
 ```bash
 export OPENAI_EMBEDDING_API_KEY=...
 export OPENAI_EMBEDDING_BASE_URL=https://example.com/api/v3
 export OPENAI_EMBEDDING_MODEL=...
+```
+
+兼容变量：
+
+- `ARK_API_KEY` 可作为推理模型 API key fallback。
+- `ARK_EMBEDDING_API_KEY` 可作为 embedding API key fallback。
+
+模型配置也可以在系统启动后通过“模型配置”页面维护，配置会写入 SQLite。
+
+## 启动方式
+
+1. 安装 Node 依赖：
+
+```bash
+npm install
+```
+
+2. 配置模型环境变量，或准备启动后在页面中配置模型。
+
+3. 启动开发服务：
+
+```bash
 npm run dev
 ```
 
-`ARK_API_KEY` is accepted as a reasoning API key fallback, and `ARK_EMBEDDING_API_KEY` is accepted as an embedding API key fallback. Persistent state lives in `apps/server/data/state.db`, imported knowledge files live under `apps/server/data/knowledge/files`, and parsed knowledge text lives under `apps/server/data/knowledge/parsed`.
+4. 打开浏览器：
 
-## Local RAG
+```text
+http://127.0.0.1:3000/
+```
 
-The RAG path uses:
+服务默认监听 `127.0.0.1:3000`。可以通过环境变量修改：
 
-- SQLite tables in `apps/server/data/state.db` for knowledge bases, documents, document versions, chunks, ingestion jobs, index outbox, and retrieval logs
-- SQLite FTS5 virtual table `document_chunks_fts` for keyword recall
-- sqlite-vec virtual table `document_chunk_vectors` for vector recall when an embedding model is configured
-- `document_chunk_vector_rows` for vector payload, deletion state, and knowledge-base/document filters
-- `vector_index_state` for sqlite-vec backend metadata such as vector dimension and distance metric
-- sqlite-vec is statically linked into the Go server through CGO; no separate vector database process is required
-- Parent-child chunks: child chunks are used for recall, parent chunks are injected into the agent prompt for fuller context
-- PDF files are extracted through Poppler `pdftotext`; text-like formats such as Markdown, TXT, JSON, CSV, YAML, and XML are indexed directly
-- Knowledge import accepts files up to 256MiB; the Hertz request body limit is set to 320MiB to allow multipart upload overhead
+```bash
+ADDR=127.0.0.1:3001 npm run dev
+```
 
-The Go server is built with the `sqlite_fts5` tag by the npm scripts. If running Go commands directly, include the same tag and keep the module/build caches under `/tmp`:
+如需指定前端构建产物目录：
+
+```bash
+WEB_DIST_DIR=apps/web/dist npm run dev
+```
+
+## 构建与检查
+
+构建前端和后端：
+
+```bash
+npm run build
+```
+
+仅构建前端：
+
+```bash
+npm run build:web
+```
+
+仅构建后端：
+
+```bash
+npm run build:server
+```
+
+运行检查：
+
+```bash
+npm run check
+```
+
+运行后端测试：
+
+```bash
+npm run test
+```
+
+清理构建产物：
+
+```bash
+npm run clean
+```
+
+如果直接运行 Go 命令，需要带上 `sqlite_fts5` tag，并建议把缓存放到 `/tmp`：
 
 ```bash
 GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test -tags sqlite_fts5 ./apps/server/...
 GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go run -tags sqlite_fts5 ./apps/server
 ```
 
-## Structure
-
-- `apps/web`: TypeScript chat UI, built to `apps/web/dist`
-- `apps/server`: Go backend entrypoint
-- `apps/server/internal/http`: Hertz HTTP/SSE transport and composition root
-- `apps/server/internal/agent`: multi-round agent loop, prompt construction, compaction, skill loading
-- `apps/server/internal/claudecode`: startup context discovery for CLAUDE.md, rules, MCP config, and skill directories
-- `apps/server/internal/runtime`: local tool registry, schema export, invocation dispatch, risk policy
-- `apps/server/internal/tools`: CoreCoder-derived tools plus generic and web tools
-- `apps/server/internal/skills`: prompt-only skill registry, file skill loader, skill configuration
-- `apps/server/internal/memory`: in-memory state plus SQLite-backed conversation persistence
-- `apps/server/internal/model`: OpenAI-compatible chat completions adapter
-- `apps/server/internal/knowledge`: document import, SQLite chunk/FTS5 indexing, sqlite-vec vector indexing, hybrid retrieval
-- `apps/server/internal/contracts`: backend DTOs and stream/trace schemas
-
-## Agent Behavior
-
-- Multi-round loop: `user -> model -> tool calls -> tool results -> model ... -> final answer`
-- Frontend SSE stream shows intermediate model output as collapsible thinking text and final answer separately
-- Startup context loads `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, unscoped `.claude/rules/*.md`, user rules, settings, auto memory, MCP config, and skill directories
-- Sessions, messages, agent traces, model config, tool config, skill config, MCP server config, and imported knowledge files are persisted under `apps/server/data`
-- Skills are prompt packages, not tools. Project skills are discovered from `skills/**/SKILL.md` and `.claude/skills/**/SKILL.md`; personal skills are discovered from `~/.claude/skills/**/SKILL.md`
-- Skill metadata is visible up front; full `SKILL.md` content and support resources are loaded progressively after slash selection, lightweight matching, or model `<load_skill ...>` request
-- MCP config is discovered from `.mcp.json` and compatible config paths and is kept separate from skills
-- Context compaction first trims older tool outputs, then summarizes older messages, then preserves recent turns and loaded skill context
-- Imported knowledge is retrieved before each model loop and injected as ordinary prompt context, not as a tool result and not as a skill
-
-## Useful Endpoints
+## 常用 API
 
 - `GET /health`
 - `GET /api/conversations`
@@ -111,8 +240,6 @@ GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache 
 - `POST /api/conversations/:id/chat`
 - `POST /api/conversations/:id/chat/stream`
 - `GET /api/conversations/:id/traces`
-- `GET /api/model/config`
-- `PUT /api/model/config`
 - `GET /api/model/configs`
 - `PUT /api/model/configs/:id`
 - `DELETE /api/model/configs/:id`
@@ -133,3 +260,31 @@ GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache 
 - `POST /api/knowledge/import`
 - `POST /api/knowledge/search`
 - `DELETE /api/knowledge/:id`
+
+## 目录结构速查
+
+```text
+.
+├── apps
+│   ├── server
+│   │   ├── main.go
+│   │   └── internal
+│   │       ├── agent
+│   │       ├── claudecode
+│   │       ├── contracts
+│   │       ├── http
+│   │       ├── knowledge
+│   │       ├── mcp
+│   │       ├── memory
+│   │       ├── model
+│   │       ├── runtime
+│   │       ├── skills
+│   │       ├── state
+│   │       └── tools
+│   └── web
+│       └── src
+├── skills
+├── package.json
+├── go.mod
+└── README.md
+```
