@@ -104,23 +104,55 @@ type SkillDetailResponse = {
 
 type KnowledgeItem = {
   id: string;
+  knowledgeBaseId?: string;
   name: string;
   size: number;
   contentType?: string;
   importedAt: string;
+  status?: string;
+  chunkCount?: number;
+  childChunkCount?: number;
+  parentChunkCount?: number;
+};
+
+type KnowledgeBase = {
+  id: string;
+  name: string;
+  description?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  documentCount: number;
+  chunkCount: number;
+  childChunkCount: number;
+  parentChunkCount: number;
 };
 
 type KnowledgeResponse = {
   items: KnowledgeItem[];
+  knowledgeBases?: KnowledgeBase[];
 };
 
 type KnowledgeImportResponse = {
   item: KnowledgeItem;
   items: KnowledgeItem[];
+  knowledgeBases?: KnowledgeBase[];
+};
+
+type KnowledgeBasesResponse = {
+  knowledgeBases: KnowledgeBase[];
+  items?: KnowledgeItem[];
+};
+
+type KnowledgeBaseCreateResponse = {
+  knowledgeBase: KnowledgeBase;
+  knowledgeBases: KnowledgeBase[];
+  items: KnowledgeItem[];
 };
 
 type ModelConfig = {
   id: string;
+  modelType?: "reasoning" | "embedding" | string;
   provider: string;
   baseURL: string;
   model: string;
@@ -167,7 +199,9 @@ const skillPageEl = mustQuery<HTMLElement>("#skillPage");
 const skillSearchEl = mustQuery<HTMLInputElement>("#skillSearch");
 const skillListEl = mustQuery<HTMLDivElement>("#skillList");
 const knowledgePageEl = mustQuery<HTMLElement>("#knowledgePage");
+const knowledgeBaseListEl = mustQuery<HTMLDivElement>("#knowledgeBaseList");
 const knowledgeListEl = mustQuery<HTMLDivElement>("#knowledgeList");
+const createKnowledgeBaseEl = mustQuery<HTMLButtonElement>("#createKnowledgeBase");
 const addKnowledgeEl = mustQuery<HTMLButtonElement>("#addKnowledge");
 const knowledgeFileInputEl = mustQuery<HTMLInputElement>("#knowledgeFileInput");
 const modelPageEl = mustQuery<HTMLElement>("#modelPage");
@@ -177,13 +211,17 @@ const modelSelectorEl = mustQuery<HTMLSelectElement>("#modelSelector");
 const skillMenuEl = mustQuery<HTMLDivElement>("#skillMenu");
 const chatPaneEl = mustQuery<HTMLElement>(".chatPane");
 
+const maxKnowledgeFileBytes = 256 * 1024 * 1024;
+
 let conversations: Conversation[] = [];
 let availableSkills: Skill[] = [];
+let knowledgeBases: KnowledgeBase[] = [];
 let knowledgeItems: KnowledgeItem[] = [];
 let modelConfigs: ModelConfig[] = [];
 let enabledSkillNames = new Set<string>();
 let activeConversationId = "";
 let activeModelConfigId = window.localStorage.getItem("activeModelConfigId") || "default";
+let activeKnowledgeBaseId = window.localStorage.getItem("activeKnowledgeBaseId") || "";
 let isStreaming = false;
 let currentView: "chat" | "skills" | "knowledge" | "models" = "chat";
 let slashMenuIndex = 0;
@@ -243,7 +281,7 @@ skillsNavEl.addEventListener("click", async () => {
 knowledgeNavEl.addEventListener("click", async () => {
   if (isStreaming) return;
   setView("knowledge");
-  if (knowledgeItems.length === 0 && !knowledgeLoadError) {
+  if (knowledgeBases.length === 0 && !knowledgeLoadError) {
     await loadKnowledge().catch(showKnowledgeError);
   } else {
     renderKnowledge();
@@ -261,8 +299,19 @@ modelNavEl.addEventListener("click", async () => {
 });
 
 addKnowledgeEl.addEventListener("click", () => {
-  if (isStreaming || isKnowledgeImporting) return;
+  if (isStreaming || isKnowledgeImporting || !activeKnowledgeBaseId) return;
   knowledgeFileInputEl.click();
+});
+
+createKnowledgeBaseEl.addEventListener("click", async () => {
+  if (isStreaming || isKnowledgeImporting) return;
+  const name = window.prompt("知识库名称");
+  if (!name || !name.trim()) return;
+  try {
+    await createKnowledgeBase(name.trim());
+  } catch (error) {
+    showKnowledgeError(error);
+  }
 });
 
 addModelConfigEl.addEventListener("click", () => {
@@ -275,6 +324,10 @@ knowledgeFileInputEl.addEventListener("change", async () => {
   const file = knowledgeFileInputEl.files?.[0];
   knowledgeFileInputEl.value = "";
   if (!file) return;
+  if (file.size > maxKnowledgeFileBytes) {
+    showKnowledgeError(new Error(`文件大小超过限制：最大支持 ${formatFileSize(maxKnowledgeFileBytes)}，当前文件 ${formatFileSize(file.size)}`));
+    return;
+  }
   try {
     await importKnowledge(file);
   } catch (error) {
@@ -334,8 +387,73 @@ async function loadSkills(): Promise<void> {
 }
 
 async function loadKnowledge(): Promise<void> {
-  const body = await request<KnowledgeResponse>("/api/knowledge");
+  const basesBody = await request<KnowledgeBasesResponse>("/api/knowledge-bases");
+  knowledgeBases = basesBody.knowledgeBases ?? [];
+  if (!knowledgeBases.some((base) => base.id === activeKnowledgeBaseId)) {
+    activeKnowledgeBaseId = knowledgeBases[0]?.id || "";
+    if (activeKnowledgeBaseId) {
+      window.localStorage.setItem("activeKnowledgeBaseId", activeKnowledgeBaseId);
+    } else {
+      window.localStorage.removeItem("activeKnowledgeBaseId");
+    }
+  }
+  if (activeKnowledgeBaseId) {
+    const body = await request<KnowledgeResponse>(`/api/knowledge?knowledgeBaseId=${encodeURIComponent(activeKnowledgeBaseId)}`);
+    knowledgeItems = body.items ?? [];
+    if (body.knowledgeBases) {
+      knowledgeBases = body.knowledgeBases;
+    }
+  } else {
+    knowledgeItems = [];
+  }
+  knowledgeLoadError = "";
+  renderKnowledge();
+}
+
+async function createKnowledgeBase(name: string): Promise<void> {
+  const body = await request<KnowledgeBaseCreateResponse>("/api/knowledge-bases", {
+    method: "POST",
+    body: JSON.stringify({ name })
+  });
+  knowledgeBases = body.knowledgeBases ?? [];
+  activeKnowledgeBaseId = body.knowledgeBase.id;
+  window.localStorage.setItem("activeKnowledgeBaseId", activeKnowledgeBaseId);
   knowledgeItems = body.items ?? [];
+  knowledgeLoadError = "";
+  renderKnowledge();
+}
+
+async function selectKnowledgeBase(id: string): Promise<void> {
+  activeKnowledgeBaseId = id;
+  window.localStorage.setItem("activeKnowledgeBaseId", activeKnowledgeBaseId);
+  const body = await request<KnowledgeResponse>(`/api/knowledge?knowledgeBaseId=${encodeURIComponent(activeKnowledgeBaseId)}`);
+  knowledgeItems = body.items ?? [];
+  if (body.knowledgeBases) {
+    knowledgeBases = body.knowledgeBases;
+  }
+  knowledgeLoadError = "";
+  renderKnowledge();
+}
+
+async function deleteKnowledgeBase(id: string): Promise<void> {
+  const body = await request<KnowledgeBasesResponse>(`/api/knowledge-bases/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+  knowledgeBases = body.knowledgeBases ?? [];
+  if (activeKnowledgeBaseId === id || !knowledgeBases.some((base) => base.id === activeKnowledgeBaseId)) {
+    activeKnowledgeBaseId = knowledgeBases[0]?.id || "";
+    if (activeKnowledgeBaseId) {
+      window.localStorage.setItem("activeKnowledgeBaseId", activeKnowledgeBaseId);
+    } else {
+      window.localStorage.removeItem("activeKnowledgeBaseId");
+    }
+  }
+  if (activeKnowledgeBaseId) {
+    const docs = await request<KnowledgeResponse>(`/api/knowledge?knowledgeBaseId=${encodeURIComponent(activeKnowledgeBaseId)}`);
+    knowledgeItems = docs.items ?? [];
+  } else {
+    knowledgeItems = [];
+  }
   knowledgeLoadError = "";
   renderKnowledge();
 }
@@ -343,8 +461,8 @@ async function loadKnowledge(): Promise<void> {
 async function loadModelConfigs(): Promise<void> {
   const body = await request<ModelConfigsResponse>("/api/model/configs");
   modelConfigs = body.configs ?? [];
-  const fallback = body.defaultConfigId || modelConfigs[0]?.id || "default";
-  if (!modelConfigs.some((config) => config.id === activeModelConfigId)) {
+  const fallback = body.defaultConfigId || defaultReasoningModelConfigId();
+  if (!modelConfigs.some((config) => config.id === activeModelConfigId && modelConfigType(config) === "reasoning")) {
     activeModelConfigId = fallback;
     window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
   }
@@ -368,10 +486,16 @@ async function saveModelConfig(id: string, payload: Record<string, unknown>): Pr
   modelConfigs.sort((left, right) => {
     if (left.id === "default") return -1;
     if (right.id === "default") return 1;
+    if (modelConfigType(left) !== modelConfigType(right)) return modelConfigType(left) === "reasoning" ? -1 : 1;
     return left.id.localeCompare(right.id);
   });
-  activeModelConfigId = next.id;
-  window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
+  if (modelConfigType(next) === "reasoning") {
+    activeModelConfigId = next.id;
+    window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
+  } else if (!modelConfigs.some((config) => config.id === activeModelConfigId && modelConfigType(config) === "reasoning")) {
+    activeModelConfigId = defaultReasoningModelConfigId();
+    window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
+  }
   modelLoadError = "";
   editingModelConfigId = null;
   renderModelSelector();
@@ -383,8 +507,8 @@ async function deleteModelConfig(id: string): Promise<void> {
     method: "DELETE"
   });
   modelConfigs = body.configs ?? [];
-  if (activeModelConfigId === id || !modelConfigs.some((config) => config.id === activeModelConfigId)) {
-    activeModelConfigId = body.defaultConfigId || modelConfigs[0]?.id || "default";
+  if (activeModelConfigId === id || !modelConfigs.some((config) => config.id === activeModelConfigId && modelConfigType(config) === "reasoning")) {
+    activeModelConfigId = body.defaultConfigId || defaultReasoningModelConfigId();
     window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
   }
   if (editingModelConfigId === id) editingModelConfigId = null;
@@ -394,6 +518,12 @@ async function deleteModelConfig(id: string): Promise<void> {
 }
 
 async function importKnowledge(file: File): Promise<void> {
+  if (!activeKnowledgeBaseId) {
+    throw new Error("请先创建或选择知识库");
+  }
+  if (file.size > maxKnowledgeFileBytes) {
+    throw new Error(`文件大小超过限制：最大支持 ${formatFileSize(maxKnowledgeFileBytes)}，当前文件 ${formatFileSize(file.size)}`);
+  }
   isKnowledgeImporting = true;
   addKnowledgeEl.disabled = true;
   addKnowledgeEl.textContent = "导入中";
@@ -401,6 +531,7 @@ async function importKnowledge(file: File): Promise<void> {
   try {
     const form = new FormData();
     form.append("file", file);
+    form.append("knowledgeBaseId", activeKnowledgeBaseId);
     const response = await fetch("/api/knowledge/import", {
       method: "POST",
       body: form
@@ -421,6 +552,9 @@ async function importKnowledge(file: File): Promise<void> {
       throw new Error("Invalid JSON response from /api/knowledge/import");
     }
     knowledgeItems = body.items ?? [];
+    if (body.knowledgeBases) {
+      knowledgeBases = body.knowledgeBases;
+    }
     knowledgeLoadError = "";
   } finally {
     isKnowledgeImporting = false;
@@ -431,10 +565,14 @@ async function importKnowledge(file: File): Promise<void> {
 }
 
 async function deleteKnowledgeItem(id: string): Promise<void> {
-  const body = await request<KnowledgeResponse>(`/api/knowledge/${encodeURIComponent(id)}`, {
+  const suffix = activeKnowledgeBaseId ? `?knowledgeBaseId=${encodeURIComponent(activeKnowledgeBaseId)}` : "";
+  const body = await request<KnowledgeResponse>(`/api/knowledge/${encodeURIComponent(id)}${suffix}`, {
     method: "DELETE"
   });
   knowledgeItems = body.items ?? [];
+  if (body.knowledgeBases) {
+    knowledgeBases = body.knowledgeBases;
+  }
   knowledgeLoadError = "";
   renderKnowledge();
 }
@@ -491,6 +629,7 @@ async function sendMessage(content: string): Promise<void> {
   skillsNavEl.disabled = true;
   knowledgeNavEl.disabled = true;
   modelNavEl.disabled = true;
+  createKnowledgeBaseEl.disabled = true;
   addKnowledgeEl.disabled = true;
   addModelConfigEl.disabled = true;
   renderSkills();
@@ -514,6 +653,7 @@ async function sendMessage(content: string): Promise<void> {
     skillsNavEl.disabled = false;
     knowledgeNavEl.disabled = false;
     modelNavEl.disabled = false;
+    createKnowledgeBaseEl.disabled = false;
     addKnowledgeEl.disabled = isKnowledgeImporting;
     addModelConfigEl.disabled = false;
     renderSkills();
@@ -571,7 +711,7 @@ async function streamChat(content: string, streamState: StreamRenderState): Prom
 }
 
 function consumeSSEBuffer(buffer: string, streamState: StreamRenderState): string {
-  let remaining = buffer;
+  let remaining = buffer.replace(/\r\n/g, "\n");
   while (true) {
     const boundary = remaining.indexOf("\n\n");
     if (boundary < 0) return remaining;
@@ -596,7 +736,15 @@ function parseSSEEvent(raw: string): AgentStreamEvent | null {
     }
   }
   if (dataLines.length === 0) return null;
-  const parsed = JSON.parse(dataLines.join("\n")) as AgentStreamEvent;
+  let parsed: AgentStreamEvent;
+  try {
+    parsed = JSON.parse(dataLines.join("\n")) as AgentStreamEvent;
+  } catch (error) {
+    return {
+      type: "error",
+      content: error instanceof Error ? error.message : "Invalid SSE event payload"
+    };
+  }
   if (!parsed.type) parsed.type = eventType;
   return parsed;
 }
@@ -831,14 +979,17 @@ function renderSkills(): void {
 }
 
 function renderKnowledge(): void {
-  addKnowledgeEl.disabled = isStreaming || isKnowledgeImporting;
+  const activeBase = knowledgeBases.find((base) => base.id === activeKnowledgeBaseId) || null;
+  createKnowledgeBaseEl.disabled = isStreaming || isKnowledgeImporting;
+  addKnowledgeEl.disabled = isStreaming || isKnowledgeImporting || !activeBase;
   addKnowledgeEl.textContent = isKnowledgeImporting ? "导入中" : "添加";
+  knowledgeBaseListEl.innerHTML = "";
   knowledgeListEl.innerHTML = "";
   if (knowledgeLoadError) {
     const wrapper = document.createElement("div");
     wrapper.className = "knowledgeError";
     const text = document.createElement("div");
-    text.textContent = "知识库加载失败：" + knowledgeLoadError;
+    text.textContent = "知识库操作失败：" + knowledgeLoadError;
     const retry = document.createElement("button");
     retry.type = "button";
     retry.textContent = "Retry";
@@ -851,19 +1002,86 @@ function renderKnowledge(): void {
       }
     });
     wrapper.append(text, retry);
-    knowledgeListEl.appendChild(wrapper);
+    knowledgeBaseListEl.appendChild(wrapper);
     return;
+  }
+  if (knowledgeBases.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "emptyState compact knowledgeEmpty";
+    empty.textContent = "还没有知识库。";
+    knowledgeBaseListEl.appendChild(empty);
+    const detailEmpty = document.createElement("div");
+    detailEmpty.className = "emptyState compact knowledgeEmpty";
+    detailEmpty.textContent = "请先创建知识库。";
+    knowledgeListEl.appendChild(detailEmpty);
+    return;
+  }
+  for (const base of knowledgeBases) {
+    const row = document.createElement("article");
+    row.className = `knowledgeBaseItem${base.id === activeKnowledgeBaseId ? " active" : ""}`;
+    row.addEventListener("click", async () => {
+      if (isStreaming || isKnowledgeImporting || base.id === activeKnowledgeBaseId) return;
+      try {
+        await selectKnowledgeBase(base.id);
+      } catch (error) {
+        showKnowledgeError(error);
+      }
+    });
+    const info = document.createElement("div");
+    info.className = "knowledgeBaseInfo";
+    const name = document.createElement("div");
+    name.className = "knowledgeBaseName";
+    name.textContent = base.name || "Untitled";
+    const meta = document.createElement("div");
+    meta.className = "knowledgeBaseMeta";
+    meta.textContent = [`${base.documentCount || 0} docs`, chunkSummary(base)].join(" · ");
+    info.append(name, meta);
+    row.appendChild(info);
+    if (base.id !== "default") {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "knowledgeBaseDeleteButton";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", "删除知识库");
+      remove.disabled = isStreaming || isKnowledgeImporting;
+      remove.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        if (!window.confirm(`删除知识库 ${base.name}？`)) return;
+        try {
+          await deleteKnowledgeBase(base.id);
+        } catch (error) {
+          showKnowledgeError(error);
+        }
+      });
+      row.appendChild(remove);
+    }
+    knowledgeBaseListEl.appendChild(row);
   }
   if (isKnowledgeImporting) {
     const status = document.createElement("div");
     status.className = "knowledgeImportStatus";
-    status.textContent = "正在导入文件...";
+    status.textContent = `正在导入到 ${activeBase?.name || "知识库"}...`;
     knowledgeListEl.appendChild(status);
   }
+  if (!activeBase) {
+    const empty = document.createElement("div");
+    empty.className = "emptyState compact knowledgeEmpty";
+    empty.textContent = "请选择知识库。";
+    knowledgeListEl.appendChild(empty);
+    return;
+  }
+  const header = document.createElement("div");
+  header.className = "knowledgeDocumentsHeader";
+  const title = document.createElement("strong");
+  title.textContent = activeBase.name;
+  const meta = document.createElement("span");
+  meta.textContent = `${activeBase.documentCount || 0} docs · ${chunkSummary(activeBase)}`;
+  header.append(title, meta);
+  knowledgeListEl.appendChild(header);
   if (knowledgeItems.length === 0) {
     const empty = document.createElement("div");
     empty.className = "emptyState compact knowledgeEmpty";
-    empty.textContent = "还没有导入知识文件。";
+    empty.textContent = "这个知识库还没有导入文件。";
     knowledgeListEl.appendChild(empty);
     return;
   }
@@ -882,7 +1100,13 @@ function renderKnowledge(): void {
     name.textContent = item.name || "Untitled";
     const meta = document.createElement("div");
     meta.className = "knowledgeMeta";
-    meta.textContent = [formatFileSize(item.size), item.contentType || "unknown", formatDateTime(item.importedAt)].filter(Boolean).join(" · ");
+    meta.textContent = [
+      formatFileSize(item.size),
+      item.contentType || "unknown",
+      chunkSummary(item),
+      item.status || "",
+      formatDateTime(item.importedAt)
+    ].filter(Boolean).join(" · ");
     info.append(name, meta);
 
     const remove = document.createElement("button");
@@ -907,22 +1131,25 @@ function renderKnowledge(): void {
 function renderModelSelector(): void {
   modelSelectorEl.innerHTML = "";
   modelSelectorEl.disabled = isStreaming;
-  if (modelConfigs.length === 0) {
+  const reasoningConfigs = modelConfigs.filter((config) => modelConfigType(config) === "reasoning");
+  if (reasoningConfigs.length === 0) {
     const option = document.createElement("option");
     option.value = "default";
-    option.textContent = "default";
+    option.textContent = "无推理模型";
     modelSelectorEl.appendChild(option);
     activeModelConfigId = "default";
+    modelSelectorEl.disabled = true;
     return;
   }
-  for (const config of modelConfigs) {
+  for (const config of reasoningConfigs) {
     const option = document.createElement("option");
     option.value = config.id;
     option.textContent = modelConfigLabel(config);
     modelSelectorEl.appendChild(option);
   }
-  if (!modelConfigs.some((config) => config.id === activeModelConfigId)) {
-    activeModelConfigId = modelConfigs[0]?.id || "default";
+  if (!reasoningConfigs.some((config) => config.id === activeModelConfigId)) {
+    activeModelConfigId = defaultReasoningModelConfigId();
+    window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
   }
   modelSelectorEl.value = activeModelConfigId;
 }
@@ -968,8 +1195,9 @@ function renderModelConfigs(): void {
       modelConfigListEl.appendChild(renderModelConfigEditor(config));
       continue;
     }
+    const type = modelConfigType(config);
     const card = document.createElement("article");
-    card.className = `modelConfigItem${config.id === activeModelConfigId ? " active" : ""}`;
+    card.className = `modelConfigItem${type === "reasoning" && config.id === activeModelConfigId ? " active" : ""}`;
     card.addEventListener("click", () => {
       expandedModelConfigId = expandedModelConfigId === config.id ? null : config.id;
       renderModelConfigs();
@@ -983,11 +1211,14 @@ function renderModelConfigs(): void {
     name.textContent = modelConfigLabel(config);
     const status = document.createElement("span");
     status.className = `modelConfigStatus ${config.apiKeySet ? "ready" : "missing"}`;
-    status.textContent = config.apiKeySet ? "Key set" : "No key";
-    title.append(name, status);
+    status.textContent = type === "embedding" ? "向量模型" : "推理模型";
+    const keyStatus = document.createElement("span");
+    keyStatus.className = `modelConfigStatus ${config.apiKeySet ? "ready" : "missing"}`;
+    keyStatus.textContent = config.apiKeySet ? "Key set" : "No key";
+    title.append(name, status, keyStatus);
     const meta = document.createElement("div");
     meta.className = "modelConfigMeta";
-    meta.textContent = [config.provider || "openai-compatible", config.baseURL || "No base URL", config.apiKeyPreview ? `Key ${config.apiKeyPreview}` : ""].filter(Boolean).join(" · ");
+    meta.textContent = [type === "embedding" ? "Embedding" : "Chat", config.provider || "openai-compatible", config.baseURL || "No base URL", config.apiKeyPreview ? `Key ${config.apiKeyPreview}` : ""].filter(Boolean).join(" · ");
     info.append(title, meta);
 
     const actions = document.createElement("div");
@@ -997,9 +1228,10 @@ function renderModelConfigs(): void {
     });
     const select = document.createElement("button");
     select.type = "button";
-    select.textContent = config.id === activeModelConfigId ? "当前模型" : "设为当前";
-    select.disabled = isStreaming || config.id === activeModelConfigId;
+    select.textContent = type === "embedding" ? "用于向量" : config.id === activeModelConfigId ? "当前模型" : "设为当前";
+    select.disabled = isStreaming || type === "embedding" || config.id === activeModelConfigId;
     select.addEventListener("click", () => {
+      if (type !== "reasoning") return;
       activeModelConfigId = config.id;
       window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
       renderModelSelector();
@@ -1039,6 +1271,7 @@ function renderModelConfigDetail(config: ModelConfig): HTMLElement {
   detail.className = "modelConfigDetail";
   detail.append(
     modelConfigDetailItem("ID", config.id),
+    modelConfigDetailItem("Type", modelConfigType(config) === "embedding" ? "向量模型" : "推理模型"),
     modelConfigDetailItem("Provider", config.provider || "openai-compatible"),
     modelConfigDetailItem("Base URL", config.baseURL || "No base URL"),
     modelConfigDetailItem("Model", config.model || "No model"),
@@ -1067,6 +1300,14 @@ function renderModelConfigEditor(config: ModelConfig | null): HTMLElement {
   panel.className = "modelConfigEditor";
   const id = createLabeledInput("配置 ID", config?.id || nextModelConfigID(), "text");
   id.input.disabled = isStreaming || !isNew;
+  const type = createLabeledSelect("模型类型", modelConfigType(config || undefined), [
+    { value: "reasoning", label: "推理模型" },
+    { value: "embedding", label: "向量模型" }
+  ]);
+  if (config?.id === "default") {
+    type.select.value = "reasoning";
+    type.select.disabled = true;
+  }
   const provider = createLabeledInput("Provider", config?.provider || "openai-compatible", "text");
   const apiKey = createLabeledInput("API Key", "", "password");
   apiKey.input.placeholder = config?.apiKeySet ? "留空则保留已保存的 key" : "请输入 API key";
@@ -1092,10 +1333,14 @@ function renderModelConfigEditor(config: ModelConfig | null): HTMLElement {
       window.alert("配置 ID 不能为空");
       return;
     }
+    const extra = { ...(config?.extra || {}) };
+    delete extra["embeddingModel"];
     const payload: Record<string, unknown> = {
+      modelType: type.select.value,
       provider: provider.input.value.trim(),
       baseURL: baseURL.input.value.trim(),
       model: modelName.input.value.trim(),
+      extra,
       temperature: Number(temperature.input.value || 0.2),
       timeoutSeconds: Number(timeout.input.value || 60)
     };
@@ -1117,7 +1362,7 @@ function renderModelConfigEditor(config: ModelConfig | null): HTMLElement {
     renderModelConfigs();
   });
   actions.append(save, cancel);
-  panel.append(id.wrapper, provider.wrapper, apiKey.wrapper, baseURL.wrapper, modelName.wrapper, temperature.wrapper, timeout.wrapper, actions);
+  panel.append(id.wrapper, type.wrapper, provider.wrapper, apiKey.wrapper, baseURL.wrapper, modelName.wrapper, temperature.wrapper, timeout.wrapper, actions);
   return panel;
 }
 
@@ -1250,8 +1495,35 @@ function createLabeledInput(labelText: string, value: string, type: string): { w
   return { wrapper, input };
 }
 
+function createLabeledSelect(labelText: string, value: string, options: Array<{ value: string; label: string }>): { wrapper: HTMLElement; select: HTMLSelectElement } {
+  const wrapper = document.createElement("label");
+  wrapper.className = "modelField";
+  const label = document.createElement("span");
+  label.textContent = labelText;
+  const select = document.createElement("select");
+  select.disabled = isStreaming;
+  for (const option of options) {
+    const item = document.createElement("option");
+    item.value = option.value;
+    item.textContent = option.label;
+    select.appendChild(item);
+  }
+  select.value = value;
+  wrapper.append(label, select);
+  return { wrapper, select };
+}
+
+function modelConfigType(config?: ModelConfig): "reasoning" | "embedding" {
+  return config?.modelType === "embedding" ? "embedding" : "reasoning";
+}
+
+function defaultReasoningModelConfigId(): string {
+  return modelConfigs.find((config) => modelConfigType(config) === "reasoning")?.id || "default";
+}
+
 function modelConfigLabel(config: ModelConfig): string {
-  return config.id === "default" ? `default · ${config.model || "model"}` : `${config.id} · ${config.model || "model"}`;
+  const typeLabel = modelConfigType(config) === "embedding" ? "向量" : "推理";
+  return `${config.id} · ${typeLabel} · ${config.model || "model"}`;
 }
 
 function nextModelConfigID(): string {
@@ -1302,6 +1574,16 @@ function formatFileSize(size: number): string {
   }
   const digits = value >= 10 || unitIndex === 0 ? 0 : 1;
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function chunkSummary(value: { chunkCount?: number; childChunkCount?: number; parentChunkCount?: number }): string {
+  const total = value.chunkCount ?? 0;
+  const child = value.childChunkCount ?? 0;
+  const parent = value.parentChunkCount ?? 0;
+  if (child > 0 || parent > 0) {
+    return `${total} chunks (${child} child, ${parent} parent)`;
+  }
+  return `${total} chunks`;
 }
 
 function formatDateTime(value: string): string {
