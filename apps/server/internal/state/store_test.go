@@ -142,6 +142,7 @@ func TestModelConfigPersistence(t *testing.T) {
 
 	seed := ModelConfigRecord{
 		ID:             "default",
+		ModelType:      "reasoning",
 		Provider:       "openai-compatible",
 		APIKey:         "sk-seed",
 		BaseURL:        "https://example.com/api/v3/",
@@ -176,9 +177,13 @@ func TestModelConfigPersistence(t *testing.T) {
 	if record.BaseURL != "https://example.com/api/v3" {
 		t.Fatalf("expected normalized base url, got %q", record.BaseURL)
 	}
+	if record.ModelType != "reasoning" {
+		t.Fatalf("expected reasoning model type, got %q", record.ModelType)
+	}
 
 	if err := store.SaveModelConfig(ModelConfigRecord{
 		ID:             "default",
+		ModelType:      "reasoning",
 		Provider:       "",
 		APIKey:         "sk-updated",
 		BaseURL:        "",
@@ -217,9 +222,13 @@ func TestModelConfigPersistence(t *testing.T) {
 	if record.Extra["routing"] != "primary" {
 		t.Fatalf("expected extra json to persist, got %#v", record.Extra)
 	}
+	if record.ModelType != "reasoning" {
+		t.Fatalf("expected model type to persist, got %q", record.ModelType)
+	}
 
 	if err := store.SaveModelConfig(ModelConfigRecord{
 		ID:             "fast",
+		ModelType:      "reasoning",
 		Provider:       "openai-compatible",
 		APIKey:         "sk-fast",
 		BaseURL:        "https://fast.example.com/api",
@@ -229,15 +238,51 @@ func TestModelConfigPersistence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("save custom model config: %v", err)
 	}
+	if err := store.SaveModelConfig(ModelConfigRecord{
+		ID:             "embed",
+		ModelType:      "embedding",
+		Provider:       "openai-compatible",
+		APIKey:         "sk-embed",
+		BaseURL:        "https://embed.example.com/api",
+		Model:          "embed-model",
+		Temperature:    0.2,
+		TimeoutSeconds: 20,
+	}); err != nil {
+		t.Fatalf("save embedding model config: %v", err)
+	}
 	configs, err := store.ListModelConfigs()
 	if err != nil {
 		t.Fatalf("list model configs: %v", err)
 	}
-	if len(configs) != 2 {
-		t.Fatalf("expected two model configs, got %d", len(configs))
+	if len(configs) != 3 {
+		t.Fatalf("expected three model configs, got %d", len(configs))
 	}
-	if configs[0].ID != "default" || configs[1].ID != "fast" {
+	if configs[0].ID != "default" || configs[1].ID != "fast" || configs[2].ID != "embed" {
 		t.Fatalf("expected default config first, got %#v", configs)
+	}
+	if err := store.SaveModelConfig(ModelConfigRecord{
+		ID:        "aaa-empty-embed",
+		ModelType: "embedding",
+		APIKey:    "sk-embed-empty",
+	}); err != nil {
+		t.Fatalf("save empty embedding model config: %v", err)
+	}
+	emptyEmbedding, ok, err := store.ModelConfig("aaa-empty-embed")
+	if err != nil {
+		t.Fatalf("read empty embedding model config: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected empty embedding model config")
+	}
+	if emptyEmbedding.Model != "" {
+		t.Fatalf("empty embedding model should stay empty, got %q", emptyEmbedding.Model)
+	}
+	embedding, ok, err := store.FirstModelConfigByType("embedding")
+	if err != nil {
+		t.Fatalf("read embedding model config: %v", err)
+	}
+	if !ok || embedding.ID != "embed" || embedding.Model != "embed-model" {
+		t.Fatalf("embedding config = %#v ok=%v, want embed", embedding, ok)
 	}
 	if err := store.DeleteModelConfig("fast"); err != nil {
 		t.Fatalf("delete custom model config: %v", err)
