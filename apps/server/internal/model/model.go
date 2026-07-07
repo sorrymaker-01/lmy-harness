@@ -37,16 +37,26 @@ type StreamingClient interface {
 	ChatStream(ctx context.Context, input Input, onDelta StreamHandler) (contracts.ModelResponse, error)
 }
 
+type EmbeddingClient interface {
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+}
+
 type Config struct {
 	Provider       string
 	APIKey         string
 	BaseURL        string
 	Model          string
+	EmbeddingModel string
 	Temperature    float64
 	TimeoutSeconds int
 }
 
 type OpenAICompatibleModel struct {
+	config Config
+	client *http.Client
+}
+
+type OpenAIEmbeddingClient struct {
 	config Config
 	client *http.Client
 }
@@ -63,14 +73,39 @@ func NewOpenAICompatibleModel(config Config) Client {
 	}
 }
 
+func NewOpenAIEmbeddingClient(config Config) *OpenAIEmbeddingClient {
+	config = NormalizeConfig(config)
+	if strings.TrimSpace(config.EmbeddingModel) == "" {
+		return nil
+	}
+	return &OpenAIEmbeddingClient{
+		config: config,
+		client: &http.Client{Timeout: time.Duration(config.TimeoutSeconds) * time.Second},
+	}
+}
+
 func DefaultConfigFromEnv() Config {
 	return NormalizeConfig(Config{
 		Provider:       "openai-compatible",
 		APIKey:         firstEnv("OPENAI_API_KEY", "ARK_API_KEY"),
 		BaseURL:        envOrDefault("OPENAI_BASE_URL", "https://ark-cn-beijing.bytedance.net/api/v3"),
 		Model:          envOrDefault("OPENAI_MODEL", "ep-20260507115713-ltdzl"),
+		EmbeddingModel: strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
 		Temperature:    envFloatOrDefault("OPENAI_TEMPERATURE", 0.2),
 		TimeoutSeconds: envIntOrDefault("OPENAI_TIMEOUT_SECONDS", 60),
+	})
+}
+
+func DefaultEmbeddingConfigFromEnv() Config {
+	embeddingModel := strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL"))
+	return NormalizeConfig(Config{
+		Provider:       "openai-compatible",
+		APIKey:         firstEnv("OPENAI_EMBEDDING_API_KEY", "ARK_EMBEDDING_API_KEY"),
+		BaseURL:        strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_BASE_URL")),
+		Model:          embeddingModel,
+		EmbeddingModel: embeddingModel,
+		Temperature:    0.2,
+		TimeoutSeconds: envIntOrDefault("OPENAI_EMBEDDING_TIMEOUT_SECONDS", envIntOrDefault("OPENAI_TIMEOUT_SECONDS", 60)),
 	})
 }
 
@@ -88,6 +123,7 @@ func NormalizeConfig(config Config) Config {
 	if config.Model == "" {
 		config.Model = "ep-20260507115713-ltdzl"
 	}
+	config.EmbeddingModel = strings.TrimSpace(config.EmbeddingModel)
 	if config.Temperature < 0 || config.Temperature > 2 {
 		config.Temperature = 0.2
 	}
@@ -219,6 +255,153 @@ func (m OpenAICompatibleModel) Chat(ctx context.Context, input Input) (contracts
 		PromptTokens:     response.Usage.PromptTokens,
 		CompletionTokens: response.Usage.CompletionTokens,
 	}, nil
+}
+
+func (m *OpenAIEmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if m == nil {
+		return nil, nil
+	}
+	config := NormalizeConfig(m.config)
+	if strings.TrimSpace(config.APIKey) == "" {
+		return nil, fmt.Errorf("embedding api key is required: save an embedding model API key in sqlite model_configs or set OPENAI_EMBEDDING_API_KEY/ARK_EMBEDDING_API_KEY")
+	}
+	if strings.TrimSpace(config.EmbeddingModel) == "" {
+		return nil, fmt.Errorf("embedding model is required: save a model_type=embedding config in sqlite model_configs or set OPENAI_EMBEDDING_MODEL")
+	}
+	clean := make([]string, 0, len(texts))
+	for _, text := range texts {
+		text = strings.TrimSpace(text)
+		if text != "" {
+			clean = append(clean, text)
+		}
+	}
+	if len(clean) == 0 {
+		return nil, nil
+	}
+	endpoint := embeddingEndpointURL(config.BaseURL)
+	if isMultimodalEmbeddingEndpoint(endpoint) {
+		return m.embedMultimodalTexts(ctx, config, endpoint, clean)
+	}
+	payload := map[string]any{
+		"model": config.EmbeddingModel,
+		"input": clean,
+	}
+	return m.postEmbeddingRequest(ctx, config, endpoint, payload, len(clean))
+}
+
+func (m *OpenAIEmbeddingClient) embedMultimodalTexts(ctx context.Context, config Config, endpoint string, texts []string) ([][]float32, error) {
+	vectors := make([][]float32, 0, len(texts))
+	for _, text := range texts {
+		payload := map[string]any{
+			"model": config.EmbeddingModel,
+			"input": []map[string]any{
+				{
+					"type": "text",
+					"text": text,
+				},
+			},
+		}
+		result, err := m.postEmbeddingRequest(ctx, config, endpoint, payload, 1)
+		if err != nil {
+			return nil, err
+		}
+		if len(result) != 1 {
+			return nil, fmt.Errorf("embedding count mismatch: got %d, want 1", len(result))
+		}
+		vectors = append(vectors, result[0])
+	}
+	return vectors, nil
+}
+
+func (m *OpenAIEmbeddingClient) postEmbeddingRequest(ctx context.Context, config Config, endpoint string, payload map[string]any, expected int) ([][]float32, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("authorization", "Bearer "+config.APIKey)
+	res, err := m.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		var errorBody bytes.Buffer
+		_, _ = errorBody.ReadFrom(res.Body)
+		return nil, fmt.Errorf("embedding request failed: %s %s", res.Status, errorBody.String())
+	}
+	var responseBody bytes.Buffer
+	_, _ = responseBody.ReadFrom(res.Body)
+	return parseEmbeddingResponse(responseBody.Bytes(), expected)
+}
+
+func parseEmbeddingResponse(body []byte, expected int) ([][]float32, error) {
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, err
+	}
+	if len(envelope.Data) == 0 {
+		return nil, nil
+	}
+	var listData []struct {
+		Index     *int      `json:"index"`
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.Unmarshal(envelope.Data, &listData); err == nil {
+		vectors := make([][]float32, len(listData))
+		for i, item := range listData {
+			index := i
+			if item.Index != nil {
+				index = *item.Index
+			}
+			if index >= 0 && index < len(vectors) {
+				vectors[index] = item.Embedding
+			}
+		}
+		return compactEmbeddingVectors(vectors), nil
+	}
+	var singleData struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.Unmarshal(envelope.Data, &singleData); err != nil {
+		return nil, err
+	}
+	if len(singleData.Embedding) == 0 {
+		return nil, nil
+	}
+	if expected > 1 {
+		return nil, fmt.Errorf("embedding response returned one vector for %d requested inputs", expected)
+	}
+	return [][]float32{singleData.Embedding}, nil
+}
+
+func compactEmbeddingVectors(vectors [][]float32) [][]float32 {
+	out := make([][]float32, 0, len(vectors))
+	for _, vector := range vectors {
+		if len(vector) > 0 {
+			out = append(out, vector)
+		}
+	}
+	return out
+}
+
+func isMultimodalEmbeddingEndpoint(endpoint string) bool {
+	return strings.Contains(strings.ToLower(endpoint), "/embeddings/multimodal")
+}
+
+func embeddingEndpointURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	lower := strings.ToLower(baseURL)
+	if strings.HasSuffix(lower, "/embeddings") || strings.Contains(lower, "/embeddings/") {
+		return baseURL
+	}
+	return baseURL + "/embeddings"
 }
 
 func (m OpenAICompatibleModel) ChatStream(ctx context.Context, input Input, onDelta StreamHandler) (contracts.ModelResponse, error) {
