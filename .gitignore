@@ -5,6 +5,9 @@ apps/server/data/*.json
 apps/server/data/*.db
 apps/server/data/*.db-shm
 apps/server/data/*.db-wal
+apps/server/data/*.db-journal
+apps/server/data/knowledge/
+apps/server/data/qdrant/
 *.tsbuildinfo
 *.hertz.gz
 .env
