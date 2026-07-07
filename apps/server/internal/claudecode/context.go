@@ -88,7 +88,11 @@ func (c StartupContext) TranscriptDir() string {
 }
 
 func (c StartupContext) KnowledgeDir() string {
-	return filepath.Join(c.TranscriptDir(), "knowledge")
+	root := strings.TrimSpace(c.ProjectRoot)
+	if root == "" {
+		root = detectProjectRoot()
+	}
+	return filepath.Join(root, "apps", "server", "data", "knowledge")
 }
 
 func (c StartupContext) StateDBPath() string {
