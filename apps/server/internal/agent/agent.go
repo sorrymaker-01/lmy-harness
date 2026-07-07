@@ -9,6 +9,7 @@ import (
 
 	"code.byted.org/ai/lmy/apps/server/internal/claudecode"
 	"code.byted.org/ai/lmy/apps/server/internal/contracts"
+	"code.byted.org/ai/lmy/apps/server/internal/knowledge"
 	"code.byted.org/ai/lmy/apps/server/internal/memory"
 	"code.byted.org/ai/lmy/apps/server/internal/model"
 	"code.byted.org/ai/lmy/apps/server/internal/runtime"
@@ -23,6 +24,7 @@ type Agent struct {
 	model       model.Client
 	skillReg    *skills.Registry
 	skillConfig *skills.ConfigStore
+	knowledge   *knowledge.Store
 	startup     claudecode.StartupContext
 	maxRounds   int
 }
@@ -67,6 +69,10 @@ func (a *Agent) SetModel(model model.Client) {
 	a.modelMu.Lock()
 	a.model = model
 	a.modelMu.Unlock()
+}
+
+func (a *Agent) SetKnowledgeStore(store *knowledge.Store) {
+	a.knowledge = store
 }
 
 func (a *Agent) SkillRegistry() *skills.Registry {
@@ -155,7 +161,31 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 	var allToolResults []contracts.ToolResult
 	var loadedSkillDetails []skills.Detail
 	loadedSkills := map[string]struct{}{}
+	retrievalResult := knowledge.RetrievalResult{}
 	finalAnswer := ""
+
+	if a.knowledge != nil {
+		result, err := a.knowledge.Retrieve(ctx, input.UserMessage, knowledge.RetrievalOptions{ConversationID: input.ConversationID, TopK: 8})
+		if err == nil && len(result.RerankedResults) > 0 {
+			retrievalResult = result
+			modelMessages = insertKnowledgeContext(modelMessages, result)
+			if err := emitAgentEvent(emit, contracts.AgentStreamEvent{
+				Type:    "knowledge_retrieved",
+				Title:   "知识库召回",
+				Content: renderKnowledgeContext(result),
+				TraceID: trace.ID,
+			}); err != nil {
+				return RunOutput{}, err
+			}
+		} else if err != nil {
+			_ = emitAgentEvent(emit, contracts.AgentStreamEvent{
+				Type:    "knowledge_retrieval_error",
+				Title:   "知识库召回失败",
+				Content: err.Error(),
+				TraceID: trace.ID,
+			})
+		}
+	}
 
 	if detail, explicit, ok, err := a.maybeLoadSkill(input.UserMessage, emit, trace.ID); err != nil {
 		trace.Error = err.Error()
@@ -193,7 +223,7 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 			trace.ToolCalls = allToolCalls
 			trace.ToolResults = allToolResults
 			trace.WorkingMemorySnapshot = workingMemory
-			contextSnapshot := buildContextSnapshot(input.ConversationID, turnID, input.UserMessage, shortMemory, workingMemory, recent, allToolResults, availableTools, enabledSkills, a.startup)
+			contextSnapshot := buildContextSnapshot(input.ConversationID, turnID, input.UserMessage, shortMemory, workingMemory, recent, allToolResults, availableTools, enabledSkills, retrievalResult, a.startup)
 			trace.ContextSnapshot = &contextSnapshot
 			a.store.UpdateTrace(trace)
 			_ = emitAgentEvent(emit, contracts.AgentStreamEvent{
@@ -343,7 +373,7 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 		modelMessages = append(modelMessages, contracts.LLMMessage{Role: contracts.RoleAssistant, Content: finalAnswer})
 	}
 
-	contextSnapshot := buildContextSnapshot(input.ConversationID, turnID, input.UserMessage, shortMemory, workingMemory, recent, allToolResults, availableTools, enabledSkills, a.startup)
+	contextSnapshot := buildContextSnapshot(input.ConversationID, turnID, input.UserMessage, shortMemory, workingMemory, recent, allToolResults, availableTools, enabledSkills, retrievalResult, a.startup)
 	completedAt := shared.Now()
 
 	assistantMessage := contracts.Message{
@@ -356,6 +386,7 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 			"toolResults": allToolResults,
 			"loopRounds":  len(trace.LoopSteps) + 1,
 			"skills":      loadedSkillDetails,
+			"retrieval":   retrievalResult.RerankedResults,
 		},
 	}
 	a.store.AddMessage(assistantMessage)
@@ -461,7 +492,7 @@ func (a *Agent) execToolsParallel(ctx context.Context, conversationID string, ca
 	return results
 }
 
-func buildContextSnapshot(conversationID string, turnID string, userMessage string, shortMemory contracts.ShortMemory, workingMemory contracts.WorkingMemory, recent []contracts.Message, toolResults []contracts.ToolResult, tools []contracts.RuntimeTool, skillManifests []skills.Manifest, startup claudecode.StartupContext) contracts.ContextSnapshot {
+func buildContextSnapshot(conversationID string, turnID string, userMessage string, shortMemory contracts.ShortMemory, workingMemory contracts.WorkingMemory, recent []contracts.Message, toolResults []contracts.ToolResult, tools []contracts.RuntimeTool, skillManifests []skills.Manifest, retrieval knowledge.RetrievalResult, startup claudecode.StartupContext) contracts.ContextSnapshot {
 	sources := []contracts.ContextSource{
 		{
 			Type:    "short_memory",
@@ -480,6 +511,7 @@ func buildContextSnapshot(conversationID string, turnID string, userMessage stri
 		},
 	}
 	sources = append(sources, startupContextSources(startup)...)
+	sources = append(sources, retrievalContextSources(retrieval)...)
 	if len(toolResults) > 0 {
 		sources = append(sources, contracts.ContextSource{
 			Type:    "tool",
@@ -846,6 +878,101 @@ func buildInitialModelMessages(shortMemory contracts.ShortMemory, recent []contr
 	}
 	messages = append(messages, contracts.LLMMessage{Role: contracts.RoleUser, Content: userMessage})
 	return messages
+}
+
+func insertKnowledgeContext(messages []contracts.LLMMessage, retrieval knowledge.RetrievalResult) []contracts.LLMMessage {
+	if len(retrieval.RerankedResults) == 0 {
+		return messages
+	}
+	contextMessage := contracts.LLMMessage{
+		Role:    contracts.RoleUser,
+		Content: renderKnowledgePromptContext(retrieval),
+	}
+	if len(messages) == 0 {
+		return []contracts.LLMMessage{contextMessage}
+	}
+	out := append([]contracts.LLMMessage(nil), messages...)
+	for i := len(out) - 1; i >= 0; i-- {
+		if out[i].Role == contracts.RoleUser {
+			out = append(out[:i], append([]contracts.LLMMessage{contextMessage}, out[i:]...)...)
+			return out
+		}
+	}
+	return append(out, contextMessage)
+}
+
+func renderKnowledgePromptContext(retrieval knowledge.RetrievalResult) string {
+	sections := []string{
+		"[Retrieved knowledge context]",
+		"Use these retrieved knowledge snippets when they are relevant to the user request. Ignore them if they are not relevant. Do not claim they came from tool execution.",
+	}
+	for i, chunk := range retrieval.RerankedResults {
+		source := strings.TrimSpace(chunk.SourceURI)
+		if source == "" {
+			source = chunk.DocID
+		}
+		title := strings.TrimSpace(chunk.Title)
+		if title == "" {
+			title = "Untitled"
+		}
+		header := fmt.Sprintf("## Result %d: %s", i+1, title)
+		meta := []string{
+			"Source: " + source,
+			"Chunk: " + chunk.ID,
+			"Recall: " + strings.Join(chunk.Sources, ", "),
+		}
+		if strings.TrimSpace(chunk.HeadingPath) != "" {
+			meta = append(meta, "Heading: "+chunk.HeadingPath)
+		}
+		sections = append(sections, strings.Join([]string{
+			header,
+			strings.Join(meta, "\n"),
+			shared.TrimRunes(chunk.Content, 2600),
+		}, "\n"))
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+func renderKnowledgeContext(retrieval knowledge.RetrievalResult) string {
+	if len(retrieval.RerankedResults) == 0 {
+		return "No relevant knowledge chunks found."
+	}
+	lines := []string{}
+	for i, chunk := range retrieval.RerankedResults {
+		title := strings.TrimSpace(chunk.Title)
+		if title == "" {
+			title = chunk.DocID
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s [%s]\n%s", i+1, title, strings.Join(chunk.Sources, ", "), shared.TrimRunes(chunk.Content, 500)))
+	}
+	return strings.Join(lines, "\n\n")
+}
+
+func retrievalContextSources(retrieval knowledge.RetrievalResult) []contracts.ContextSource {
+	if len(retrieval.RerankedResults) == 0 {
+		return nil
+	}
+	sources := make([]contracts.ContextSource, 0, len(retrieval.RerankedResults))
+	for _, chunk := range retrieval.RerankedResults {
+		title := strings.TrimSpace(chunk.Title)
+		if title == "" {
+			title = chunk.DocID
+		}
+		sources = append(sources, contracts.ContextSource{
+			Type:    "knowledge",
+			Title:   title,
+			Content: chunk.Content,
+			Meta: map[string]any{
+				"chunkId":         chunk.ID,
+				"docId":           chunk.DocID,
+				"knowledgeBaseId": chunk.KnowledgeBaseID,
+				"sources":         chunk.Sources,
+				"scores":          chunk.Scores,
+				"sourceUri":       chunk.SourceURI,
+			},
+		})
+	}
+	return sources
 }
 
 func compressModelMessages(messages *[]contracts.LLMMessage, loadedSkills []skills.Detail) {
