@@ -121,7 +121,7 @@ func (c *Client) initialize(ctx context.Context) error {
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
-			"name":    "local-claude-code",
+			"name":    "lmy-harness-agent",
 			"version": "0.1.0",
 		},
 	}); err != nil {

@@ -1,6 +1,6 @@
-# Local Claude Code
+# Lmy' Harness Agent
 
-Monorepo for a local Claude Code style agent:
+Monorepo for a local task-execution and troubleshooting agent:
 
 - Frontend: TypeScript chat UI in `apps/web`
 - Backend: Go + CloudWeGo Hertz in `apps/server`
@@ -81,7 +81,7 @@ GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache 
 - `apps/server`: Go backend entrypoint
 - `apps/server/internal/http`: Hertz HTTP/SSE transport and composition root
 - `apps/server/internal/agent`: multi-round agent loop, prompt construction, compaction, skill loading
-- `apps/server/internal/claudecode`: Claude Code style startup context discovery
+- `apps/server/internal/claudecode`: startup context discovery for CLAUDE.md, rules, MCP config, and skill directories
 - `apps/server/internal/runtime`: local tool registry, schema export, invocation dispatch, risk policy
 - `apps/server/internal/tools`: CoreCoder-derived tools plus generic and web tools
 - `apps/server/internal/skills`: prompt-only skill registry, file skill loader, skill configuration
@@ -90,7 +90,7 @@ GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache 
 - `apps/server/internal/knowledge`: document import, SQLite chunk/FTS5 indexing, sqlite-vec vector indexing, hybrid retrieval
 - `apps/server/internal/contracts`: backend DTOs and stream/trace schemas
 
-## Claude Code Style Behavior
+## Agent Behavior
 
 - Multi-round loop: `user -> model -> tool calls -> tool results -> model ... -> final answer`
 - Frontend SSE stream shows intermediate model output as collapsible thinking text and final answer separately
@@ -98,7 +98,7 @@ GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache 
 - Sessions, messages, agent traces, model config, tool config, skill config, MCP server config, and imported knowledge files are persisted under `apps/server/data`
 - Skills are prompt packages, not tools. Project skills are discovered from `skills/**/SKILL.md` and `.claude/skills/**/SKILL.md`; personal skills are discovered from `~/.claude/skills/**/SKILL.md`
 - Skill metadata is visible up front; full `SKILL.md` content and support resources are loaded progressively after slash selection, lightweight matching, or model `<load_skill ...>` request
-- MCP config is discovered from `.mcp.json` and Claude config paths and is kept separate from skills
+- MCP config is discovered from `.mcp.json` and compatible config paths and is kept separate from skills
 - Context compaction first trims older tool outputs, then summarizes older messages, then preserves recent turns and loaded skill context
 - Imported knowledge is retrieved before each model loop and injected as ordinary prompt context, not as a tool result and not as a skill
 

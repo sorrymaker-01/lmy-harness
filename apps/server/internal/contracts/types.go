@@ -12,6 +12,11 @@ const (
 	RoleTool      Role = "tool"
 )
 
+const (
+	DefaultShortMemorySummary       = "没有历史短期记忆。"
+	LegacyDefaultShortMemorySummary = "No prior short-term memory."
+)
+
 type RiskLevel string
 
 const (

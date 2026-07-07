@@ -30,6 +30,15 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/sse"
 )
 
+const (
+	defaultModelConfigID        = "default"
+	defaultEmbeddingModelConfig = "default-embedding"
+	reasoningModelType          = "reasoning"
+	embeddingModelType          = "embedding"
+	initialConversationTitle    = "新对话"
+	legacyInitialTitle          = "New conversation"
+)
+
 type HTTPServer struct {
 	store                 memory.Store
 	runtime               *runtime.Runtime
@@ -108,11 +117,11 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 		if servers, err := stateStore.EnabledMCPServers(); err == nil {
 			startupContext.MCP.Servers = servers
 		}
-		_ = stateStore.SeedModelConfig(modelConfigRecordFromConfig("default", modelConfig))
+		_ = stateStore.SeedModelConfig(modelConfigRecordFromConfig(defaultModelConfigID, modelConfig))
 		if embeddingRecord, ok := embeddingModelConfigRecordFromEnv(); ok {
 			_ = stateStore.SeedModelConfig(embeddingRecord)
 		}
-		if record, ok, err := stateStore.ModelConfig("default"); err == nil && ok {
+		if record, ok, err := stateStore.ModelConfig(defaultModelConfigID); err == nil && ok {
 			modelConfig = modelConfigFromRecord(record)
 		}
 	}
@@ -154,7 +163,7 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 	if existing := store.ListConversations(); len(existing) > 0 {
 		defaultConversationID = existing[0].ID
 	} else {
-		defaultConversation := store.CreateConversation("新对话")
+		defaultConversation := store.CreateConversation(initialConversationTitle)
 		defaultConversationID = defaultConversation.ID
 	}
 	httpServer := &HTTPServer{
@@ -342,33 +351,18 @@ func (s *HTTPServer) handleChatStream(ctx context.Context, c *app.RequestContext
 	conversationID := c.Param("conversationId")
 	modelIDs, primaryModelID, err := s.normalizeChatModelSelection(body)
 	if err != nil {
-		_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
-			Type:      "error",
-			Title:     "请求失败",
-			Content:   err.Error(),
-			CreatedAt: shared.Now(),
-		})
+		writeSSEError(writer, err.Error(), "")
 		return
 	}
 	if len(modelIDs) > 1 {
 		if err := s.runMultiModelChatStream(ctx, writer, conversationID, body, modelIDs, primaryModelID); err != nil {
-			_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
-				Type:      "error",
-				Title:     "请求失败",
-				Content:   err.Error(),
-				CreatedAt: shared.Now(),
-			})
+			writeSSEError(writer, err.Error(), "")
 		}
 		return
 	}
 	modelClient, err := s.modelClientForRequest(primaryModelID)
 	if err != nil {
-		_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
-			Type:      "error",
-			Title:     "请求失败",
-			Content:   err.Error(),
-			CreatedAt: shared.Now(),
-		})
+		writeSSEError(writer, err.Error(), "")
 		return
 	}
 	output, err := s.agent.RunStream(ctx, agent.RunInput{
@@ -382,13 +376,7 @@ func (s *HTTPServer) handleChatStream(ctx context.Context, c *app.RequestContext
 		return writeSSEEvent(writer, event)
 	})
 	if err != nil {
-		_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
-			Type:      "error",
-			Title:     "请求失败",
-			Content:   err.Error(),
-			TraceID:   output.Trace.ID,
-			CreatedAt: shared.Now(),
-		})
+		writeSSEError(writer, err.Error(), output.Trace.ID)
 		return
 	}
 	_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
@@ -412,7 +400,7 @@ func (s *HTTPServer) handleModelConfig(ctx context.Context, c *app.RequestContex
 
 func (s *HTTPServer) handleModelConfigs(ctx context.Context, c *app.RequestContext) {
 	if s.stateStore == nil {
-		c.JSON(consts.StatusOK, utils.H{"configs": []modelConfigResponse{modelConfigResponseFromRecord(modelConfigRecordFromConfig("default", model.DefaultConfigFromEnv()))}, "defaultConfigId": "default"})
+		c.JSON(consts.StatusOK, utils.H{"configs": []modelConfigResponse{modelConfigResponseFromRecord(modelConfigRecordFromConfig(defaultModelConfigID, model.DefaultConfigFromEnv()))}, "defaultConfigId": defaultModelConfigID})
 		return
 	}
 	if _, err := s.currentModelConfigRecord(); err != nil {
@@ -424,7 +412,7 @@ func (s *HTTPServer) handleModelConfigs(ctx context.Context, c *app.RequestConte
 		writeHertzError(c, consts.StatusInternalServerError, err.Error())
 		return
 	}
-	c.JSON(consts.StatusOK, utils.H{"configs": modelConfigResponses(records), "defaultConfigId": "default"})
+	c.JSON(consts.StatusOK, utils.H{"configs": modelConfigResponses(records), "defaultConfigId": defaultModelConfigID})
 }
 
 func (s *HTTPServer) handleUpdateModelConfig(ctx context.Context, c *app.RequestContext) {
@@ -432,7 +420,7 @@ func (s *HTTPServer) handleUpdateModelConfig(ctx context.Context, c *app.Request
 		writeHertzError(c, consts.StatusInternalServerError, "state store is unavailable")
 		return
 	}
-	s.handleSaveModelConfig(c, "default")
+	s.handleSaveModelConfig(c, defaultModelConfigID)
 }
 
 func (s *HTTPServer) handleUpdateModelConfigByID(ctx context.Context, c *app.RequestContext) {
@@ -453,7 +441,7 @@ func (s *HTTPServer) handleDeleteModelConfig(ctx context.Context, c *app.Request
 		writeHertzError(c, consts.StatusBadRequest, "model config id is required")
 		return
 	}
-	if configID == "default" {
+	if configID == defaultModelConfigID {
 		writeHertzError(c, consts.StatusBadRequest, "default model config cannot be deleted")
 		return
 	}
@@ -470,7 +458,7 @@ func (s *HTTPServer) handleDeleteModelConfig(ctx context.Context, c *app.Request
 		writeHertzError(c, consts.StatusInternalServerError, err.Error())
 		return
 	}
-	c.JSON(consts.StatusOK, utils.H{"configs": modelConfigResponses(records), "defaultConfigId": "default"})
+	c.JSON(consts.StatusOK, utils.H{"configs": modelConfigResponses(records), "defaultConfigId": defaultModelConfigID})
 }
 
 func (s *HTTPServer) handleSaveModelConfig(c *app.RequestContext, configID string) {
@@ -509,8 +497,8 @@ func (s *HTTPServer) handleSaveModelConfig(c *app.RequestContext, configID strin
 	if body.ModelType != nil {
 		record.ModelType = *body.ModelType
 	}
-	if configID == "default" {
-		record.ModelType = "reasoning"
+	if configID == defaultModelConfigID {
+		record.ModelType = reasoningModelType
 	}
 	if body.Provider != nil {
 		record.Provider = *body.Provider
@@ -543,7 +531,7 @@ func (s *HTTPServer) handleSaveModelConfig(c *app.RequestContext, configID strin
 	} else if ok {
 		record = saved
 	}
-	if s.agent != nil && record.ID == "default" && record.ModelType == "reasoning" {
+	if s.agent != nil && record.ID == defaultModelConfigID && record.ModelType == reasoningModelType {
 		config := modelConfigFromRecord(record)
 		s.agent.SetModel(model.NewOpenAICompatibleModel(config))
 	}
@@ -1025,7 +1013,7 @@ func (s *HTTPServer) visibleConversations() []contracts.Conversation {
 
 func (s *HTTPServer) reusableInitialConversation(title string) (contracts.Conversation, bool) {
 	title = strings.TrimSpace(title)
-	if title != "" && title != "新对话" && !strings.EqualFold(title, "New conversation") {
+	if title != "" && title != initialConversationTitle && !strings.EqualFold(title, legacyInitialTitle) {
 		return contracts.Conversation{}, false
 	}
 	for _, conversation := range s.store.ListConversations() {
@@ -1038,11 +1026,11 @@ func (s *HTTPServer) reusableInitialConversation(title string) (contracts.Conver
 
 func isInitialConversation(conversation contracts.Conversation, messages []contracts.Message) bool {
 	title := strings.TrimSpace(conversation.Title)
-	return (title == "新对话" || strings.EqualFold(title, "New conversation")) && len(messages) == 0
+	return (title == initialConversationTitle || strings.EqualFold(title, legacyInitialTitle)) && len(messages) == 0
 }
 
 func (s *HTTPServer) currentModelConfigRecord() (state.ModelConfigRecord, error) {
-	defaultRecord := modelConfigRecordFromConfig("default", model.DefaultConfigFromEnv())
+	defaultRecord := modelConfigRecordFromConfig(defaultModelConfigID, model.DefaultConfigFromEnv())
 	if s.stateStore == nil {
 		return defaultRecord, nil
 	}
@@ -1073,7 +1061,7 @@ func (s *HTTPServer) configureKnowledgeEmbedding() error {
 			return err
 		}
 	}
-	record, ok, err := s.stateStore.FirstModelConfigByType("embedding")
+	record, ok, err := s.stateStore.FirstModelConfigByType(embeddingModelType)
 	if err != nil {
 		return err
 	}
@@ -1097,7 +1085,7 @@ func modelConfigRecordFromConfig(id string, config model.Config) state.ModelConf
 	config = model.NormalizeConfig(config)
 	return state.ModelConfigRecord{
 		ID:             id,
-		ModelType:      "reasoning",
+		ModelType:      reasoningModelType,
 		Provider:       config.Provider,
 		APIKey:         config.APIKey,
 		BaseURL:        config.BaseURL,
@@ -1114,8 +1102,8 @@ func embeddingModelConfigRecordFromEnv() (state.ModelConfigRecord, bool) {
 		return state.ModelConfigRecord{}, false
 	}
 	return state.ModelConfigRecord{
-		ID:             "default-embedding",
-		ModelType:      "embedding",
+		ID:             defaultEmbeddingModelConfig,
+		ModelType:      embeddingModelType,
 		Provider:       config.Provider,
 		APIKey:         config.APIKey,
 		BaseURL:        config.BaseURL,
@@ -1176,9 +1164,9 @@ func modelConfigResponses(records []state.ModelConfigRecord) []modelConfigRespon
 func (s *HTTPServer) modelClientForRequest(configID string) (model.Client, error) {
 	configID = strings.TrimSpace(configID)
 	if configID == "" {
-		configID = "default"
+		configID = defaultModelConfigID
 	}
-	record := modelConfigRecordFromConfig("default", model.DefaultConfigFromEnv())
+	record := modelConfigRecordFromConfig(defaultModelConfigID, model.DefaultConfigFromEnv())
 	if s.stateStore != nil {
 		if err := s.stateStore.SeedModelConfig(record); err != nil {
 			return nil, err
@@ -1191,10 +1179,10 @@ func (s *HTTPServer) modelClientForRequest(configID string) (model.Client, error
 			return nil, fmt.Errorf("model config %q not found", configID)
 		}
 		record = loaded
-	} else if configID != "default" {
+	} else if configID != defaultModelConfigID {
 		return nil, fmt.Errorf("model config %q not found", configID)
 	}
-	if record.ModelType != "reasoning" {
+	if record.ModelType != reasoningModelType {
 		return nil, fmt.Errorf("model config %q is an embedding model and cannot be used for chat", configID)
 	}
 	if isOpenAICompatibleAnthropicBaseURL(record) {
@@ -1235,6 +1223,15 @@ func (s *HTTPServer) serveStaticFile(name string) app.HandlerFunc {
 
 func writeHertzError(c *app.RequestContext, status int, message string) {
 	c.JSON(status, utils.H{"error": message})
+}
+
+func writeSSEError(writer *sse.Writer, message string, traceID string) {
+	_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
+		Type:    "error",
+		Title:   "请求失败",
+		Content: message,
+		TraceID: traceID,
+	})
 }
 
 func writeSSEEvent(writer *sse.Writer, event contracts.AgentStreamEvent) error {

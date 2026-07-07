@@ -940,7 +940,7 @@ func buildInitialModelMessages(shortMemory contracts.ShortMemory, recent []contr
 
 func hasUsefulShortMemory(summary string) bool {
 	trimmed := strings.TrimSpace(summary)
-	return trimmed != "" && trimmed != "没有历史短期记忆。" && trimmed != "No prior short-term memory."
+	return trimmed != "" && trimmed != contracts.DefaultShortMemorySummary && trimmed != contracts.LegacyDefaultShortMemorySummary
 }
 
 func insertKnowledgeContext(messages []contracts.LLMMessage, retrieval knowledge.RetrievalResult) []contracts.LLMMessage {

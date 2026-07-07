@@ -280,9 +280,6 @@ const addModelConfigEl = mustQuery<HTMLButtonElement>("#addModelConfig");
 const primaryModelSelectorEl = mustQuery<HTMLSelectElement>("#primaryModelSelector");
 const primaryModelToggleEl = mustQuery<HTMLButtonElement>("#primaryModelToggle");
 const primaryModelPopoverEl = mustQuery<HTMLDivElement>("#primaryModelPopover");
-const multiModelToggleEl = mustQuery<HTMLButtonElement>("#multiModelToggle");
-const multiModelPopoverEl = mustQuery<HTMLDivElement>("#multiModelPopover");
-const modelModeHintEl = mustQuery<HTMLDivElement>("#modelModeHint");
 const ragKnowledgeSelectorEl = mustQuery<HTMLSelectElement>("#ragKnowledgeSelector");
 const composerSettingsButtonEl = mustQuery<HTMLButtonElement>("#composerSettingsButton");
 const composerSettingsPopoverEl = mustQuery<HTMLDivElement>("#composerSettingsPopover");
@@ -316,7 +313,6 @@ let isKnowledgeImporting = false;
 let expandedSkillName: string | null = null;
 let editingModelConfigId: string | null = null;
 let expandedModelConfigId: string | null = null;
-let multiModelPopoverOpen = false;
 let primaryModelPopoverOpen = false;
 let composerSettingsPopoverOpen = false;
 let composerSettingsPanel: ComposerSettingsPanel = "root";
@@ -385,22 +381,8 @@ composerSettingsButtonEl.addEventListener("click", (event) => {
   renderPrimaryModelPicker();
 });
 
-multiModelToggleEl.addEventListener("click", (event) => {
-  event.stopPropagation();
-  if (isStreaming) return;
-  multiModelPopoverOpen = !multiModelPopoverOpen;
-  renderModelSelector();
-});
-
 document.addEventListener("click", (event) => {
   const target = event.target;
-  if (multiModelPopoverOpen) {
-    if (target instanceof Node && (multiModelPopoverEl.contains(target) || multiModelToggleEl.contains(target))) {
-      return;
-    }
-    multiModelPopoverOpen = false;
-    renderModelSelector();
-  }
   if (primaryModelPopoverOpen) {
     if (target instanceof Node && (primaryModelPopoverEl.contains(target) || primaryModelToggleEl.contains(target))) {
       return;
@@ -419,11 +401,10 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && (primaryModelPopoverOpen || composerSettingsPopoverOpen || multiModelPopoverOpen)) {
+  if (event.key === "Escape" && (primaryModelPopoverOpen || composerSettingsPopoverOpen)) {
     primaryModelPopoverOpen = false;
     composerSettingsPopoverOpen = false;
     composerSettingsPanel = "root";
-    multiModelPopoverOpen = false;
     renderModelSelector();
     renderComposerSettingsPopover();
     event.preventDefault();
@@ -803,17 +784,10 @@ async function loadMessages(): Promise<void> {
 async function sendMessage(content: string): Promise<void> {
   lockExistingCanonicalSelection();
   addMessage({ role: "user", content });
-  const streamState = selectedReasoningModelConfigIds().length > 1 ? addMultiAssistantStream(selectedReasoningModelConfigIds()) : addAssistantStream();
+  const modelConfigIds = selectedReasoningModelConfigIds();
+  const streamState = modelConfigIds.length > 1 ? addMultiAssistantStream(modelConfigIds) : addAssistantStream();
   isStreaming = true;
-  sendButtonEl.disabled = true;
-  inputEl.disabled = true;
-  newConversationEl.disabled = true;
-  skillsNavEl.disabled = true;
-  knowledgeNavEl.disabled = true;
-  modelNavEl.disabled = true;
-  createKnowledgeBaseEl.disabled = true;
-  addKnowledgeEl.disabled = true;
-  addModelConfigEl.disabled = true;
+  setInteractionDisabled(true);
   renderSkills();
   renderKnowledge();
   renderModelSelector();
@@ -822,28 +796,32 @@ async function sendMessage(content: string): Promise<void> {
 
   try {
     await ensureActiveConversation();
-    await streamChat(content, streamState);
+    await streamChat(content, streamState, modelConfigIds);
     await loadConversations();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     finishStreamWithAnswer(streamState, "请求失败：" + message);
   } finally {
     isStreaming = false;
-    sendButtonEl.disabled = false;
-    inputEl.disabled = false;
-    newConversationEl.disabled = false;
-    skillsNavEl.disabled = false;
-    knowledgeNavEl.disabled = false;
-    modelNavEl.disabled = false;
-    createKnowledgeBaseEl.disabled = false;
-    addKnowledgeEl.disabled = isKnowledgeImporting;
-    addModelConfigEl.disabled = false;
+    setInteractionDisabled(false);
     renderSkills();
     renderKnowledge();
     renderModelSelector();
     renderModelConfigs();
     inputEl.focus();
   }
+}
+
+function setInteractionDisabled(disabled: boolean): void {
+  sendButtonEl.disabled = disabled;
+  inputEl.disabled = disabled;
+  newConversationEl.disabled = disabled;
+  skillsNavEl.disabled = disabled;
+  knowledgeNavEl.disabled = disabled;
+  modelNavEl.disabled = disabled;
+  createKnowledgeBaseEl.disabled = disabled;
+  addKnowledgeEl.disabled = disabled || isKnowledgeImporting;
+  addModelConfigEl.disabled = disabled;
 }
 
 async function ensureActiveConversation(): Promise<void> {
@@ -858,8 +836,7 @@ async function ensureActiveConversation(): Promise<void> {
   await loadConversations();
 }
 
-async function streamChat(content: string, streamState: StreamRenderState): Promise<void> {
-  const modelConfigIds = selectedReasoningModelConfigIds();
+async function streamChat(content: string, streamState: StreamRenderState, modelConfigIds: string[]): Promise<void> {
   const response = await fetch(`/api/conversations/${activeConversationId}/chat/stream`, {
     method: "POST",
     headers: {
@@ -1697,9 +1674,7 @@ function createActionMenu(label: string, items: ActionMenuItem[]): HTMLElement {
 
 function renderModelSelector(): void {
   primaryModelSelectorEl.innerHTML = "";
-  multiModelPopoverEl.innerHTML = "";
   primaryModelSelectorEl.disabled = isStreaming;
-  multiModelToggleEl.disabled = isStreaming;
   const reasoningConfigs = modelConfigs.filter((config) => modelConfigType(config) === "reasoning");
   if (reasoningConfigs.length === 0) {
     const option = document.createElement("option");
@@ -1709,11 +1684,6 @@ function renderModelSelector(): void {
     activeModelConfigId = "default";
     secondaryModelConfigIds = [];
     primaryModelSelectorEl.disabled = true;
-    multiModelToggleEl.disabled = true;
-    multiModelToggleEl.textContent = "开启多模型回答";
-    multiModelToggleEl.setAttribute("aria-expanded", "false");
-    multiModelPopoverEl.classList.add("hidden");
-    modelModeHintEl.textContent = "请先配置推理模型。";
     renderPrimaryModelPicker([]);
     renderComposerSettingsPopover();
     renderComposerSelectionSummary();
@@ -1730,69 +1700,9 @@ function renderModelSelector(): void {
   }
   primaryModelSelectorEl.appendChild(group);
   primaryModelSelectorEl.value = activeModelConfigId;
-  renderMultiModelPopover(reasoningConfigs);
-  const selectedModels = selectedReasoningModelConfigIds();
-  multiModelToggleEl.textContent = selectedModels.length > 1 ? `多模型 · ${selectedModels.length}` : "多模型";
-  multiModelToggleEl.classList.toggle("active", selectedModels.length > 1);
-  multiModelToggleEl.setAttribute("aria-expanded", String(multiModelPopoverOpen));
-  multiModelPopoverEl.classList.toggle("hidden", !multiModelPopoverOpen);
-  modelModeHintEl.textContent = selectedModels.length > 1
-    ? `多模型回答已开启：${modelDisplayName(activeModelConfigId)} + ${secondaryModelConfigIds.map(modelDisplayName).join(" + ")}。默认使用“模型选择”中的模型作为后续上下文。`
-    : "默认只使用模型选择中的模型回答；点击“开启多模型回答”可选择最多 2 个副模型并列回答。";
   renderPrimaryModelPicker(reasoningConfigs);
   renderComposerSettingsPopover();
   renderComposerSelectionSummary();
-}
-
-function renderMultiModelPopover(reasoningConfigs: ModelConfig[]): void {
-  const candidates = reasoningConfigs.filter((config) => config.id !== activeModelConfigId);
-  const primary = document.createElement("div");
-  primary.className = "multiModelGroup";
-  const primaryTitle = document.createElement("div");
-  primaryTitle.className = "multiModelGroupTitle";
-  primaryTitle.textContent = "主模型";
-  const primaryValue = document.createElement("div");
-  primaryValue.className = "multiModelPrimary";
-  primaryValue.textContent = modelDisplayName(activeModelConfigId);
-  primary.append(primaryTitle, primaryValue);
-  multiModelPopoverEl.appendChild(primary);
-
-  if (candidates.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "multiModelEmpty";
-    empty.textContent = "暂无可选副模型。请先在模型配置中新增推理模型。";
-    multiModelPopoverEl.appendChild(empty);
-    return;
-  }
-
-  const title = document.createElement("div");
-  title.className = "multiModelGroupTitle";
-  title.textContent = "副模型（最多 2 个）";
-  multiModelPopoverEl.appendChild(title);
-
-  for (const config of candidates) {
-    const checked = secondaryModelConfigIds.includes(config.id);
-    const label = document.createElement("label");
-    label.className = "multiModelOption";
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.value = config.id;
-    checkbox.checked = checked;
-    checkbox.disabled = isStreaming || (!checked && secondaryModelConfigIds.length >= 2);
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        secondaryModelConfigIds = [...secondaryModelConfigIds, config.id].filter((id, index, ids) => ids.indexOf(id) === index).slice(0, 2);
-      } else {
-        secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => id !== config.id);
-      }
-      saveModelSelection();
-      renderModelSelector();
-    });
-    const text = document.createElement("span");
-    text.textContent = modelConfigLabel(config);
-    label.append(checkbox, text);
-    multiModelPopoverEl.appendChild(label);
-  }
 }
 
 function normalizeRagKnowledgeSelection(): void {

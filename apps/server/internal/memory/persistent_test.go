@@ -40,7 +40,7 @@ func TestPersistentStoreRestoresConversationMessagesAndMemory(t *testing.T) {
 		t.Fatalf("unexpected restored messages: %#v", messages)
 	}
 	memory := restored.GetShortMemory(conversation.ID)
-	if memory.Summary == "" || memory.Summary == "没有历史短期记忆。" || memory.Summary == "No prior short-term memory." {
+	if memory.Summary == "" || memory.Summary == contracts.DefaultShortMemorySummary || memory.Summary == contracts.LegacyDefaultShortMemorySummary {
 		t.Fatalf("short memory was not restored: %#v", memory)
 	}
 }
@@ -82,7 +82,7 @@ func TestPersistentStoreDeleteConversation(t *testing.T) {
 	if messages := restored.Messages(conversation.ID); len(messages) != 0 {
 		t.Fatalf("deleted messages were restored: %#v", messages)
 	}
-	if memory := restored.GetShortMemory(conversation.ID); memory.Summary != "没有历史短期记忆。" {
+	if memory := restored.GetShortMemory(conversation.ID); memory.Summary != contracts.DefaultShortMemorySummary {
 		t.Fatalf("deleted memory was restored: %#v", memory)
 	}
 }

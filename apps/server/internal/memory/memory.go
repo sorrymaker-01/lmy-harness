@@ -169,7 +169,7 @@ func (s *InMemoryStore) GetShortMemory(conversationID string) contracts.ShortMem
 	memory := contracts.ShortMemory{
 		ID:             shared.NewID("mem"),
 		ConversationID: conversationID,
-		Summary:        "没有历史短期记忆。",
+		Summary:        contracts.DefaultShortMemorySummary,
 		RecentFacts:    []string{},
 		UpdatedAt:      shared.Now(),
 	}
@@ -185,7 +185,7 @@ func (s *InMemoryStore) UpdateShortMemory(conversationID string, userMessage str
 		previous = contracts.ShortMemory{
 			ID:             shared.NewID("mem"),
 			ConversationID: conversationID,
-			Summary:        "没有历史短期记忆。",
+			Summary:        contracts.DefaultShortMemorySummary,
 			RecentFacts:    []string{},
 		}
 	}
@@ -202,7 +202,7 @@ func (s *InMemoryStore) UpdateShortMemory(conversationID string, userMessage str
 	}
 
 	summaryParts := []string{}
-	if previous.Summary != "" && previous.Summary != "没有历史短期记忆。" && previous.Summary != "No prior short-term memory." {
+	if previous.Summary != "" && previous.Summary != contracts.DefaultShortMemorySummary && previous.Summary != contracts.LegacyDefaultShortMemorySummary {
 		summaryParts = append(summaryParts, previous.Summary)
 	}
 	summaryParts = append(summaryParts, fmt.Sprintf("最新一轮：用户问 %q；助手回答 %q。", shared.TrimRunes(userMessage, 120), shared.TrimRunes(assistantAnswer, 140)))
