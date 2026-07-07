@@ -15,6 +15,28 @@ type Message = {
   role: Role;
   content: string;
   createdAt?: string;
+  metadata?: MessageMetadata;
+};
+
+type MessageMetadata = Record<string, unknown> & {
+  multiModel?: boolean;
+  turnId?: string;
+  primaryModelConfigId?: string;
+  canonicalResponseId?: string;
+  modelResponses?: ModelResponseSummary[];
+};
+
+type ModelResponseSummary = {
+  id: string;
+  turnId?: string;
+  modelConfigId: string;
+  traceId?: string;
+  content: string;
+  status: string;
+  error?: string;
+  primaryResponse?: boolean;
+  createdAt?: string;
+  completedAt?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -75,6 +97,11 @@ type AgentStreamEvent = {
   round?: number;
   title?: string;
   content?: string;
+  turnId?: string;
+  responseId?: string;
+  modelConfigId?: string;
+  primary?: boolean;
+  canonical?: boolean;
   message?: Message;
   toolCall?: ToolCall;
   toolResult?: ToolResult;
@@ -175,6 +202,23 @@ type ModelConfigResponse = {
 
 type StreamRenderState = {
   wrapper: HTMLElement;
+  mode: "single" | "multi";
+  traceList?: HTMLElement;
+  answerPanel?: HTMLElement;
+  answerContent?: HTMLElement;
+  answerMarkdown?: string;
+  loadingEl?: HTMLElement;
+  thinkingDetails?: HTMLDetailsElement;
+  hasFinalAnswer?: boolean;
+  hasTraceEvents?: boolean;
+  multi?: MultiStreamState;
+};
+
+type ModelStreamState = {
+  responseId?: string;
+  modelConfigId: string;
+  card: HTMLElement;
+  statusEl: HTMLElement;
   traceList: HTMLElement;
   answerPanel: HTMLElement;
   answerContent: HTMLElement;
@@ -185,12 +229,36 @@ type StreamRenderState = {
   hasTraceEvents: boolean;
 };
 
+type MultiStreamState = {
+  turnId?: string;
+  canonicalResponseId?: string;
+  tipEl: HTMLElement;
+  gridEl: HTMLElement;
+  models: Map<string, ModelStreamState>;
+};
+
+type ModalAction = {
+  label: string;
+  variant?: "primary" | "secondary" | "danger";
+  onClick: () => void | Promise<void>;
+};
+
+type ActionMenuItem = {
+  label: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void | Promise<void>;
+};
+
 const conversationListEl = mustQuery<HTMLDivElement>("#conversationList");
 const conversationTitleEl = mustQuery<HTMLHeadingElement>("#conversationTitle");
 const messagesEl = mustQuery<HTMLDivElement>("#messages");
 const composerEl = mustQuery<HTMLFormElement>("#composer");
 const inputEl = mustQuery<HTMLTextAreaElement>("#messageInput");
 const sendButtonEl = mustQuery<HTMLButtonElement>("#sendButton");
+const shellEl = mustQuery<HTMLElement>(".shell");
+const sidebarToggleEl = mustQuery<HTMLButtonElement>("#sidebarToggle");
+const sidebarToggleTipEl = mustQuery<HTMLSpanElement>("#sidebarToggleTip");
 const newConversationEl = mustQuery<HTMLButtonElement>("#newConversation");
 const skillsNavEl = mustQuery<HTMLButtonElement>("#skillsNav");
 const knowledgeNavEl = mustQuery<HTMLButtonElement>("#knowledgeNav");
@@ -207,10 +275,15 @@ const knowledgeFileInputEl = mustQuery<HTMLInputElement>("#knowledgeFileInput");
 const modelPageEl = mustQuery<HTMLElement>("#modelPage");
 const modelConfigListEl = mustQuery<HTMLDivElement>("#modelConfigList");
 const addModelConfigEl = mustQuery<HTMLButtonElement>("#addModelConfig");
-const modelSelectorEl = mustQuery<HTMLSelectElement>("#modelSelector");
+const primaryModelSelectorEl = mustQuery<HTMLSelectElement>("#primaryModelSelector");
+const multiModelToggleEl = mustQuery<HTMLButtonElement>("#multiModelToggle");
+const multiModelPopoverEl = mustQuery<HTMLDivElement>("#multiModelPopover");
+const modelModeHintEl = mustQuery<HTMLDivElement>("#modelModeHint");
 const ragKnowledgeSelectorEl = mustQuery<HTMLSelectElement>("#ragKnowledgeSelector");
 const skillMenuEl = mustQuery<HTMLDivElement>("#skillMenu");
+const messageLocatorEl = mustQuery<HTMLElement>("#messageLocator");
 const chatPaneEl = mustQuery<HTMLElement>(".chatPane");
+const modalRootEl = mustQuery<HTMLDivElement>("#modalRoot");
 
 const maxKnowledgeFileBytes = 256 * 1024 * 1024;
 
@@ -222,6 +295,7 @@ let modelConfigs: ModelConfig[] = [];
 let enabledSkillNames = new Set<string>();
 let activeConversationId = "";
 let activeModelConfigId = window.localStorage.getItem("activeModelConfigId") || "default";
+let secondaryModelConfigIds = loadSecondaryModelConfigIds();
 let activeKnowledgeBaseId = window.localStorage.getItem("activeKnowledgeBaseId") || "";
 let activeRagKnowledgeBaseId = window.localStorage.getItem("activeRagKnowledgeBaseId") || "";
 let isStreaming = false;
@@ -235,6 +309,11 @@ let isKnowledgeImporting = false;
 let expandedSkillName: string | null = null;
 let editingModelConfigId: string | null = null;
 let expandedModelConfigId: string | null = null;
+let multiModelPopoverOpen = false;
+let modalCancelHandler: (() => void) | null = null;
+let sidebarCollapsed = window.localStorage.getItem("sidebarCollapsed") === "true";
+
+setSidebarCollapsed(sidebarCollapsed);
 
 composerEl.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -261,13 +340,43 @@ inputEl.addEventListener("blur", () => {
   window.setTimeout(hideSlashMenu, 120);
 });
 
+sidebarToggleEl.addEventListener("click", () => {
+  setSidebarCollapsed(!sidebarCollapsed);
+});
+
 skillSearchEl.addEventListener("input", () => {
   renderSkills();
 });
 
-modelSelectorEl.addEventListener("change", () => {
-  activeModelConfigId = modelSelectorEl.value || "default";
-  window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
+primaryModelSelectorEl.addEventListener("change", () => {
+  activeModelConfigId = primaryModelSelectorEl.value || defaultReasoningModelConfigId();
+  secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => id !== activeModelConfigId);
+  saveModelSelection();
+  renderModelSelector();
+});
+
+multiModelToggleEl.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (isStreaming) return;
+  multiModelPopoverOpen = !multiModelPopoverOpen;
+  renderModelSelector();
+});
+
+document.addEventListener("click", (event) => {
+  if (!multiModelPopoverOpen) return;
+  const target = event.target;
+  if (target instanceof Node && (multiModelPopoverEl.contains(target) || multiModelToggleEl.contains(target))) {
+    return;
+  }
+  multiModelPopoverOpen = false;
+  renderModelSelector();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !modalRootEl.classList.contains("hidden")) {
+    event.preventDefault();
+    closeAppModal(true);
+  }
 });
 
 ragKnowledgeSelectorEl.addEventListener("change", () => {
@@ -312,7 +421,12 @@ addKnowledgeEl.addEventListener("click", () => {
 
 createKnowledgeBaseEl.addEventListener("click", async () => {
   if (isStreaming || isKnowledgeImporting) return;
-  const name = window.prompt("知识库名称");
+  const name = await promptTextDialog({
+    title: "新建知识库",
+    label: "知识库名称",
+    placeholder: "例如：产品文档、投研材料、项目知识",
+    confirmText: "创建"
+  });
   if (!name || !name.trim()) return;
   try {
     await createKnowledgeBase(name.trim());
@@ -323,8 +437,7 @@ createKnowledgeBaseEl.addEventListener("click", async () => {
 
 addModelConfigEl.addEventListener("click", () => {
   if (isStreaming) return;
-  editingModelConfigId = "__new__";
-  renderModelConfigs();
+  openModelConfigDialog();
 });
 
 knowledgeFileInputEl.addEventListener("change", async () => {
@@ -481,8 +594,8 @@ async function loadModelConfigs(): Promise<void> {
   const fallback = body.defaultConfigId || defaultReasoningModelConfigId();
   if (!modelConfigs.some((config) => config.id === activeModelConfigId && modelConfigType(config) === "reasoning")) {
     activeModelConfigId = fallback;
-    window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
   }
+  normalizeModelSelection();
   modelLoadError = "";
   renderModelSelector();
   renderModelConfigs();
@@ -508,11 +621,11 @@ async function saveModelConfig(id: string, payload: Record<string, unknown>): Pr
   });
   if (modelConfigType(next) === "reasoning") {
     activeModelConfigId = next.id;
-    window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
+    secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => id !== next.id).slice(0, 2);
   } else if (!modelConfigs.some((config) => config.id === activeModelConfigId && modelConfigType(config) === "reasoning")) {
     activeModelConfigId = defaultReasoningModelConfigId();
-    window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
   }
+  normalizeModelSelection();
   modelLoadError = "";
   editingModelConfigId = null;
   renderModelSelector();
@@ -526,8 +639,9 @@ async function deleteModelConfig(id: string): Promise<void> {
   modelConfigs = body.configs ?? [];
   if (activeModelConfigId === id || !modelConfigs.some((config) => config.id === activeModelConfigId && modelConfigType(config) === "reasoning")) {
     activeModelConfigId = body.defaultConfigId || defaultReasoningModelConfigId();
-    window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
   }
+  secondaryModelConfigIds = secondaryModelConfigIds.filter((configID) => configID !== id);
+  normalizeModelSelection();
   if (editingModelConfigId === id) editingModelConfigId = null;
   if (expandedModelConfigId === id) expandedModelConfigId = null;
   renderModelSelector();
@@ -637,8 +751,9 @@ async function loadMessages(): Promise<void> {
 }
 
 async function sendMessage(content: string): Promise<void> {
+  lockExistingCanonicalSelection();
   addMessage({ role: "user", content });
-  const streamState = addAssistantStream();
+  const streamState = selectedReasoningModelConfigIds().length > 1 ? addMultiAssistantStream(selectedReasoningModelConfigIds()) : addAssistantStream();
   isStreaming = true;
   sendButtonEl.disabled = true;
   inputEl.disabled = true;
@@ -694,13 +809,20 @@ async function ensureActiveConversation(): Promise<void> {
 }
 
 async function streamChat(content: string, streamState: StreamRenderState): Promise<void> {
+  const modelConfigIds = selectedReasoningModelConfigIds();
   const response = await fetch(`/api/conversations/${activeConversationId}/chat/stream`, {
     method: "POST",
     headers: {
       "accept": "text/event-stream",
       "content-type": "application/json"
     },
-    body: JSON.stringify({ message: content, modelConfigId: activeModelConfigId, knowledgeBaseId: selectedRagKnowledgeBaseId() })
+    body: JSON.stringify({
+      message: content,
+      modelConfigId: activeModelConfigId,
+      modelConfigIds,
+      primaryModelConfigId: activeModelConfigId,
+      knowledgeBaseId: selectedRagKnowledgeBaseId()
+    })
   });
 
   if (!response.ok) {
@@ -768,6 +890,10 @@ function parseSSEEvent(raw: string): AgentStreamEvent | null {
 
 function handleStreamEvent(event: AgentStreamEvent, streamState: StreamRenderState): void {
   if (event.type === "user_message") return;
+  if (streamState.mode === "multi") {
+    handleMultiStreamEvent(event, streamState);
+    return;
+  }
   if (event.type === "answer_delta") {
     appendAnswerDelta(streamState, event.content || "");
     return;
@@ -784,7 +910,7 @@ function handleStreamEvent(event: AgentStreamEvent, streamState: StreamRenderSta
     if (!streamState.hasFinalAnswer && event.message?.content) {
       finishStreamWithAnswer(streamState, event.message.content);
     }
-    streamState.loadingEl.remove();
+    streamState.loadingEl?.remove();
     streamState.wrapper.classList.remove("streaming");
     return;
   }
@@ -795,6 +921,93 @@ function handleStreamEvent(event: AgentStreamEvent, streamState: StreamRenderSta
   if (event.type === "model_message") {
     appendTraceEvent(streamState, event);
   }
+}
+
+function handleMultiStreamEvent(event: AgentStreamEvent, streamState: StreamRenderState): void {
+  const multi = streamState.multi;
+  if (!multi) return;
+  if (event.turnId) multi.turnId = event.turnId;
+  if (event.type === "multi_model_start") {
+    return;
+  }
+  if (event.type === "model_response_start") {
+    const state = ensureModelStreamState(streamState, event.modelConfigId || "", event.responseId);
+    state.statusEl.textContent = event.primary ? "主模型 · 回答中" : "回答中";
+    return;
+  }
+  if (event.type === "canonical_selected") {
+    multi.canonicalResponseId = event.responseId;
+    updateMultiCanonicalStyles(streamState, true);
+    if (event.message) {
+      streamState.wrapper.dataset.messageId = event.message.id || "";
+      streamState.wrapper.dataset.turnId = event.turnId || "";
+      updateLatestAssistantMessage(event.message);
+    }
+    return;
+  }
+  if (event.type === "done") {
+    for (const state of multi.models.values()) {
+      state.loadingEl.remove();
+      state.card.classList.remove("streaming");
+    }
+    streamState.wrapper.classList.remove("streaming");
+    if (event.message) {
+      streamState.wrapper.dataset.messageId = event.message.id || "";
+      streamState.wrapper.dataset.turnId = event.turnId || "";
+      updateLatestAssistantMessage(event.message);
+    }
+    return;
+  }
+  if (event.type === "error" && !event.modelConfigId) {
+    for (const state of multi.models.values()) {
+      finishModelStreamWithAnswer(state, "请求失败：" + (event.content || "unknown error"));
+      state.statusEl.textContent = "失败";
+      state.card.classList.add("failed");
+    }
+    streamState.wrapper.classList.remove("streaming");
+    return;
+  }
+  if (!event.modelConfigId) return;
+  const modelState = ensureModelStreamState(streamState, event.modelConfigId, event.responseId);
+  if (event.responseId) modelState.responseId = event.responseId;
+  if (event.type === "answer_delta") {
+    appendModelAnswerDelta(modelState, event.content || "");
+    return;
+  }
+  if (event.type === "answer_reset") {
+    resetModelLiveAnswer(modelState);
+    return;
+  }
+  if (event.type === "final") {
+    finishModelStreamWithAnswer(modelState, event.message?.content || event.content || "");
+    return;
+  }
+  if (event.type === "error") {
+    finishModelStreamWithAnswer(modelState, "请求失败：" + (event.content || "unknown error"));
+    modelState.statusEl.textContent = "失败";
+    modelState.card.classList.add("failed");
+    return;
+  }
+  if (event.type === "model_message") {
+    appendModelTraceEvent(modelState, event);
+  }
+}
+
+function ensureModelStreamState(streamState: StreamRenderState, modelConfigId: string, responseId?: string): ModelStreamState {
+  const multi = streamState.multi;
+  if (!multi) throw new Error("missing multi stream state");
+  let state = multi.models.get(modelConfigId);
+  if (state) {
+    if (responseId) {
+      state.responseId = responseId;
+      state.card.dataset.responseId = responseId;
+    }
+    return state;
+  }
+  state = createModelStreamCard(modelConfigId, responseId);
+  multi.models.set(modelConfigId, state);
+  multi.gridEl.appendChild(state.card);
+  return state;
 }
 
 function renderConversations(): void {
@@ -825,7 +1038,7 @@ function renderConversations(): void {
     remove.setAttribute("aria-label", "删除会话");
     remove.addEventListener("click", async (event) => {
       event.stopPropagation();
-      if (!window.confirm("删除这个会话？")) return;
+      if (!(await confirmDelete("删除会话", `确认删除会话「${conversation.title || "Untitled"}」？此操作不可撤销。`))) return;
       try {
         await deleteConversation(conversation.id);
       } catch (error) {
@@ -855,24 +1068,28 @@ function setView(view: "chat" | "skills" | "knowledge" | "models"): void {
   if (isSkills) {
     setEmptyChat(false);
     conversationTitleEl.textContent = "技能库";
+    renderMessageLocator();
     renderSkills();
     return;
   }
   if (isKnowledge) {
     setEmptyChat(false);
     conversationTitleEl.textContent = "知识库";
+    renderMessageLocator();
     renderKnowledge();
     return;
   }
   if (isModels) {
     setEmptyChat(false);
     conversationTitleEl.textContent = "模型配置";
+    renderMessageLocator();
     renderModelConfigs();
     return;
   }
   const conversation = conversations.find((item) => item.id === activeConversationId);
   conversationTitleEl.textContent = conversation?.title || "Conversation";
   renderConversations();
+  renderMessageLocator();
 }
 
 function renderSkills(): void {
@@ -913,23 +1130,17 @@ function renderSkills(): void {
     const enabled = enabledSkillNames.has(skill.name);
     const card = document.createElement("section");
     card.className = "skillListItem";
-
-    const summary = document.createElement("div");
-    summary.className = "skillRowSummary";
-    summary.addEventListener("click", async () => {
-      if (expandedSkillName === skill.name) {
-        expandedSkillName = null;
-        renderSkills();
-        return;
-      }
+    card.addEventListener("click", async () => {
+      if (isStreaming) return;
       try {
-        await ensureSkillDetail(skill.name);
-        expandedSkillName = skill.name;
-        renderSkills();
+        await openSkillDetailDialog(skill.name);
       } catch (error) {
         showSkillError(error);
       }
     });
+
+    const summary = document.createElement("div");
+    summary.className = "skillRowSummary";
 
     const avatar = document.createElement("div");
     avatar.className = "skillAvatar";
@@ -953,6 +1164,9 @@ function renderSkills(): void {
 
     const actions = document.createElement("div");
     actions.className = "skillRowActions";
+    actions.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
 
     const switchLabel = document.createElement("label");
     switchLabel.className = "skillSwitch";
@@ -981,18 +1195,28 @@ function renderSkills(): void {
     remove.disabled = isStreaming;
     remove.addEventListener("click", async (event) => {
       event.stopPropagation();
-      if (!window.confirm(`删除 skill /${skill.name}？`)) return;
+      if (!(await confirmDelete("删除 Skill", `确认删除 /${skill.name}？此操作不可撤销。`))) return;
       await deleteSkill(skill.name);
     });
 
     actions.append(switchLabel, remove);
     summary.append(avatar, info, actions);
     card.append(summary);
-    if (expandedSkillName === skill.name) {
-      card.append(renderSkillDetail(skill));
-    }
     skillListEl.appendChild(card);
   }
+}
+
+async function openSkillDetailDialog(skillName: string): Promise<void> {
+  const skill = normalizeSkill(await ensureSkillDetail(skillName));
+  openAppModal({
+    title: `/${skill.name}`,
+    description: skill.purpose || skill.description || "Skill detail",
+    body: renderSkillDetail(skill),
+    size: "wide",
+    actions: [
+      { label: "关闭", variant: "secondary", onClick: () => closeAppModal(false) }
+    ]
+  });
 }
 
 function renderKnowledge(): void {
@@ -1056,22 +1280,21 @@ function renderKnowledge(): void {
     info.append(name, meta);
     row.appendChild(info);
     if (base.id !== "default") {
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "knowledgeBaseDeleteButton";
-      remove.textContent = "×";
-      remove.setAttribute("aria-label", "删除知识库");
-      remove.disabled = isStreaming || isKnowledgeImporting;
-      remove.addEventListener("click", async (event) => {
-        event.stopPropagation();
-        if (!window.confirm(`删除知识库 ${base.name}？`)) return;
-        try {
-          await deleteKnowledgeBase(base.id);
-        } catch (error) {
-          showKnowledgeError(error);
+      row.appendChild(createActionMenu("知识库操作", [
+        {
+          label: "删除",
+          danger: true,
+          disabled: isStreaming || isKnowledgeImporting,
+          onClick: async () => {
+            if (!(await confirmDelete("删除知识库", `确认删除知识库「${base.name || "Untitled"}」？其中的文件和索引也会被删除。`))) return;
+            try {
+              await deleteKnowledgeBase(base.id);
+            } catch (error) {
+              showKnowledgeError(error);
+            }
+          }
         }
-      });
-      row.appendChild(remove);
+      ]));
     }
     knowledgeBaseListEl.appendChild(row);
   }
@@ -1127,21 +1350,23 @@ function renderKnowledge(): void {
     ].filter(Boolean).join(" · ");
     info.append(name, meta);
 
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "knowledgeDeleteButton";
-    remove.textContent = "删除";
-    remove.disabled = isStreaming || isKnowledgeImporting;
-    remove.addEventListener("click", async () => {
-      if (!window.confirm(`删除知识文件 ${item.name}？`)) return;
-      try {
-        await deleteKnowledgeItem(item.id);
-      } catch (error) {
-        showKnowledgeError(error);
+    const menu = createActionMenu("知识文件操作", [
+      {
+        label: "删除",
+        danger: true,
+        disabled: isStreaming || isKnowledgeImporting,
+        onClick: async () => {
+          if (!(await confirmDelete("删除知识文件", `确认删除知识文件「${item.name || "Untitled"}」？对应 chunk 和向量索引也会被删除。`))) return;
+          try {
+            await deleteKnowledgeItem(item.id);
+          } catch (error) {
+            showKnowledgeError(error);
+          }
+        }
       }
-    });
+    ]);
 
-    card.append(icon, info, remove);
+    card.append(icon, info, menu);
     knowledgeListEl.appendChild(card);
   }
 }
@@ -1168,30 +1393,118 @@ function renderRagKnowledgeSelector(): void {
   ragKnowledgeSelectorEl.value = activeRagKnowledgeBaseId;
 }
 
+function createActionMenu(label: string, items: ActionMenuItem[]): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "actionMenu";
+  wrapper.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "actionMenuButton";
+  trigger.textContent = "...";
+  trigger.setAttribute("aria-label", label);
+  trigger.disabled = items.every((item) => item.disabled);
+
+  const menu = document.createElement("div");
+  menu.className = "actionMenuPopover";
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `actionMenuItem${item.danger ? " danger" : ""}`;
+    button.textContent = item.label;
+    button.disabled = Boolean(item.disabled);
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (button.disabled) return;
+      await item.onClick();
+      trigger.blur();
+    });
+    menu.appendChild(button);
+  }
+  wrapper.append(trigger, menu);
+  return wrapper;
+}
+
 function renderModelSelector(): void {
-  modelSelectorEl.innerHTML = "";
-  modelSelectorEl.disabled = isStreaming;
+  primaryModelSelectorEl.innerHTML = "";
+  multiModelPopoverEl.innerHTML = "";
+  primaryModelSelectorEl.disabled = isStreaming;
+  multiModelToggleEl.disabled = isStreaming;
   const reasoningConfigs = modelConfigs.filter((config) => modelConfigType(config) === "reasoning");
   if (reasoningConfigs.length === 0) {
     const option = document.createElement("option");
     option.value = "default";
     option.textContent = "无推理模型";
-    modelSelectorEl.appendChild(option);
+    primaryModelSelectorEl.appendChild(option);
     activeModelConfigId = "default";
-    modelSelectorEl.disabled = true;
+    secondaryModelConfigIds = [];
+    primaryModelSelectorEl.disabled = true;
+    multiModelToggleEl.disabled = true;
+    multiModelToggleEl.textContent = "开启多模型回答";
+    multiModelToggleEl.setAttribute("aria-expanded", "false");
+    multiModelPopoverEl.classList.add("hidden");
+    modelModeHintEl.textContent = "请先配置推理模型。";
     return;
   }
+  normalizeModelSelection();
   for (const config of reasoningConfigs) {
-    const option = document.createElement("option");
-    option.value = config.id;
-    option.textContent = modelConfigLabel(config);
-    modelSelectorEl.appendChild(option);
+    const primaryOption = document.createElement("option");
+    primaryOption.value = config.id;
+    primaryOption.textContent = modelConfigLabel(config);
+    primaryModelSelectorEl.appendChild(primaryOption);
   }
-  if (!reasoningConfigs.some((config) => config.id === activeModelConfigId)) {
-    activeModelConfigId = defaultReasoningModelConfigId();
-    window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
+  primaryModelSelectorEl.value = activeModelConfigId;
+  renderMultiModelPopover(reasoningConfigs);
+  const selectedModels = selectedReasoningModelConfigIds();
+  multiModelToggleEl.textContent = selectedModels.length > 1 ? `多模型回答 · ${selectedModels.length} 个模型` : "开启多模型回答";
+  multiModelToggleEl.classList.toggle("active", selectedModels.length > 1);
+  multiModelToggleEl.setAttribute("aria-expanded", String(multiModelPopoverOpen));
+  multiModelPopoverEl.classList.toggle("hidden", !multiModelPopoverOpen);
+  modelModeHintEl.textContent = selectedModels.length > 1
+    ? `多模型回答已开启：${modelDisplayName(activeModelConfigId)} + ${secondaryModelConfigIds.map(modelDisplayName).join(" + ")}。默认使用“模型选择”中的模型作为后续上下文。`
+    : "默认只使用模型选择中的模型回答；点击“开启多模型回答”可选择最多 2 个副模型并列回答。";
+}
+
+function renderMultiModelPopover(reasoningConfigs: ModelConfig[]): void {
+  const candidates = reasoningConfigs.filter((config) => config.id !== activeModelConfigId);
+  if (candidates.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "multiModelEmpty";
+    empty.textContent = "暂无可选副模型。请先在模型配置中新增推理模型。";
+    multiModelPopoverEl.appendChild(empty);
+    return;
   }
-  modelSelectorEl.value = activeModelConfigId;
+
+  const title = document.createElement("div");
+  title.className = "multiModelPopoverTitle";
+  title.textContent = "选择副模型（最多 2 个）";
+  multiModelPopoverEl.appendChild(title);
+
+  for (const config of candidates) {
+    const checked = secondaryModelConfigIds.includes(config.id);
+    const label = document.createElement("label");
+    label.className = "multiModelOption";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = config.id;
+    checkbox.checked = checked;
+    checkbox.disabled = isStreaming || (!checked && secondaryModelConfigIds.length >= 2);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        secondaryModelConfigIds = [...secondaryModelConfigIds, config.id].filter((id, index, ids) => ids.indexOf(id) === index).slice(0, 2);
+      } else {
+        secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => id !== config.id);
+      }
+      saveModelSelection();
+      renderModelSelector();
+    });
+    const text = document.createElement("span");
+    text.textContent = modelConfigLabel(config);
+    label.append(checkbox, text);
+    multiModelPopoverEl.appendChild(label);
+  }
 }
 
 function normalizeRagKnowledgeSelection(): void {
@@ -1205,6 +1518,40 @@ function selectedRagKnowledgeBaseId(): string {
   const base = knowledgeBases.find((item) => item.id === activeRagKnowledgeBaseId);
   if (!base || (base.childChunkCount ?? 0) <= 0) return "";
   return base.id;
+}
+
+function loadSecondaryModelConfigIds(): string[] {
+  const raw = window.localStorage.getItem("secondaryModelConfigIds") || window.localStorage.getItem("selectedModelConfigIds");
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.map((value) => String(value).trim()).filter(Boolean).slice(0, 2);
+    }
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+function normalizeModelSelection(): void {
+  const reasoningIDs = new Set(modelConfigs.filter((config) => modelConfigType(config) === "reasoning").map((config) => config.id));
+  if (!reasoningIDs.has(activeModelConfigId)) {
+    activeModelConfigId = defaultReasoningModelConfigId();
+  }
+  secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => reasoningIDs.has(id) && id !== activeModelConfigId).slice(0, 2);
+  saveModelSelection();
+}
+
+function saveModelSelection(): void {
+  window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
+  window.localStorage.setItem("secondaryModelConfigIds", JSON.stringify(secondaryModelConfigIds.slice(0, 2)));
+  window.localStorage.removeItem("selectedModelConfigIds");
+}
+
+function selectedReasoningModelConfigIds(): string[] {
+  normalizeModelSelection();
+  return [activeModelConfigId, ...secondaryModelConfigIds].slice(0, 3);
 }
 
 function renderModelConfigs(): void {
@@ -1244,16 +1591,12 @@ function renderModelConfigs(): void {
   }
 
   for (const config of modelConfigs) {
-    if (editingModelConfigId === config.id) {
-      modelConfigListEl.appendChild(renderModelConfigEditor(config));
-      continue;
-    }
     const type = modelConfigType(config);
     const card = document.createElement("article");
     card.className = `modelConfigItem${type === "reasoning" && config.id === activeModelConfigId ? " active" : ""}`;
     card.addEventListener("click", () => {
-      expandedModelConfigId = expandedModelConfigId === config.id ? null : config.id;
-      renderModelConfigs();
+      if (isStreaming) return;
+      openModelDetailDialog(config);
     });
 
     const info = document.createElement("div");
@@ -1286,7 +1629,8 @@ function renderModelConfigs(): void {
     select.addEventListener("click", () => {
       if (type !== "reasoning") return;
       activeModelConfigId = config.id;
-      window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
+      secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => id !== config.id).slice(0, 2);
+      saveModelSelection();
       renderModelSelector();
       renderModelConfigs();
     });
@@ -1295,15 +1639,14 @@ function renderModelConfigs(): void {
     edit.textContent = "编辑";
     edit.disabled = isStreaming;
     edit.addEventListener("click", () => {
-      editingModelConfigId = config.id;
-      renderModelConfigs();
+      openModelConfigDialog(config);
     });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "删除";
     remove.disabled = isStreaming || config.id === "default";
     remove.addEventListener("click", async () => {
-      if (!window.confirm(`删除模型配置 ${config.id}？`)) return;
+      if (!(await confirmDelete("删除模型配置", `确认删除模型配置「${config.id}」？此操作不可撤销。`))) return;
       try {
         await deleteModelConfig(config.id);
       } catch (error) {
@@ -1312,9 +1655,6 @@ function renderModelConfigs(): void {
     });
     actions.append(select, edit, remove);
     card.append(info, actions);
-    if (expandedModelConfigId === config.id) {
-      card.appendChild(renderModelConfigDetail(config));
-    }
     modelConfigListEl.appendChild(card);
   }
 }
@@ -1347,7 +1687,32 @@ function modelConfigDetailItem(labelText: string, value: string): HTMLElement {
   return item;
 }
 
-function renderModelConfigEditor(config: ModelConfig | null): HTMLElement {
+function openModelDetailDialog(config: ModelConfig): void {
+  openAppModal({
+    title: "模型详情",
+    description: modelConfigLabel(config),
+    body: renderModelConfigDetail(config),
+    size: "wide",
+    actions: [
+      { label: "关闭", variant: "secondary", onClick: () => closeAppModal(false) }
+    ]
+  });
+}
+
+function openModelConfigDialog(config: ModelConfig | null = null): void {
+  const editor = renderModelConfigEditor(config, {
+    onCancel: () => closeAppModal(false),
+    onSaved: () => closeAppModal(false)
+  });
+  openAppModal({
+    title: config ? "编辑模型" : "添加模型",
+    description: config ? `更新 ${config.id} 的连接配置。` : "配置推理模型或向量模型，保存后会写入本地 SQLite。",
+    body: editor,
+    size: "wide"
+  });
+}
+
+function renderModelConfigEditor(config: ModelConfig | null, options: { onCancel?: () => void; onSaved?: () => void } = {}): HTMLElement {
   const isNew = config === null;
   const panel = document.createElement("section");
   panel.className = "modelConfigEditor";
@@ -1402,6 +1767,7 @@ function renderModelConfigEditor(config: ModelConfig | null): HTMLElement {
     }
     try {
       await saveModelConfig(configID, payload);
+      options.onSaved?.();
     } catch (error) {
       showModelError(error);
     }
@@ -1411,6 +1777,10 @@ function renderModelConfigEditor(config: ModelConfig | null): HTMLElement {
   cancel.textContent = "取消";
   cancel.disabled = isStreaming;
   cancel.addEventListener("click", () => {
+    if (options.onCancel) {
+      options.onCancel();
+      return;
+    }
     editingModelConfigId = null;
     renderModelConfigs();
   });
@@ -1792,23 +2162,36 @@ function renderMessages(messages: Message[]): void {
   setEmptyChat(messages.length === 0);
   if (messages.length === 0) {
     messagesEl.innerHTML = `<div class="emptyState"><div class="emptyTitle">What can I help with?</div><div class="emptyHint">Start a conversation or use / to choose a skill.</div></div>`;
+    renderMessageLocator();
     return;
   }
-  for (const message of messages) {
-    addMessage(message, false);
+  for (let index = 0; index < messages.length; index += 1) {
+    addMessage(messageWithLatestFlag(messages[index], index, messages), false);
   }
+  renderMessageLocator();
   scrollMessages();
 }
 
 function addMessage(input: Message, shouldScroll = true): HTMLElement {
   setEmptyChat(false);
+  if (input.role === "assistant" && input.metadata?.multiModel) {
+    return addMultiModelMessage(input, shouldScroll);
+  }
   const wrapper = document.createElement("article");
   wrapper.className = `message ${input.role}`;
 
   const content = document.createElement("div");
   content.className = "messageContent";
   renderMarkdown(content, input.content);
-  wrapper.append(content);
+  if (input.role === "assistant") {
+    const answerPanel = document.createElement("section");
+    answerPanel.className = "answerPanel sourceCapable";
+    attachAnswerSourceButton(answerPanel, () => input.content || "", "回答内容");
+    answerPanel.append(content);
+    wrapper.append(answerPanel);
+  } else {
+    wrapper.append(content);
+  }
 
   if (input.role === "assistant" && input.metadata) {
     const loopRounds = input.metadata["loopRounds"];
@@ -1822,6 +2205,134 @@ function addMessage(input: Message, shouldScroll = true): HTMLElement {
 
   appendMessageElement(wrapper, shouldScroll);
   return wrapper;
+}
+
+function messageWithLatestFlag(message: Message, index: number, messages: Message[]): Message {
+  if (message.role !== "assistant" || !message.metadata?.multiModel) return message;
+  return {
+    ...message,
+    metadata: {
+      ...message.metadata,
+      latestSelectable: index === messages.length - 1
+    }
+  };
+}
+
+function addMultiModelMessage(input: Message, shouldScroll = true): HTMLElement {
+  const wrapper = buildMultiModelMessageElement(input);
+  appendMessageElement(wrapper, shouldScroll);
+  return wrapper;
+}
+
+function buildMultiModelMessageElement(input: Message): HTMLElement {
+  const metadata = input.metadata || {};
+  const responses = Array.isArray(metadata.modelResponses) ? metadata.modelResponses : [];
+  const canonicalResponseId = String(metadata.canonicalResponseId || "");
+  const latestSelectable = Boolean(metadata["latestSelectable"]);
+  const wrapper = document.createElement("article");
+  wrapper.className = "message assistant multiModelMessage";
+  wrapper.dataset.messageId = input.id || "";
+  wrapper.dataset.turnId = String(metadata.turnId || "");
+
+  if (latestSelectable) {
+    const tip = document.createElement("div");
+    tip.className = "multiModelTip";
+    tip.textContent = "默认使用主模型回答作为后续上下文。你可以选择本轮要采用的回答。";
+    wrapper.appendChild(tip);
+  }
+
+  const grid = document.createElement("div");
+  grid.className = `multiModelGrid count${Math.min(Math.max(responses.length, 1), 3)}`;
+  for (const response of responses) {
+    grid.appendChild(renderModelResponseCard(input, response, canonicalResponseId, latestSelectable));
+  }
+  wrapper.appendChild(grid);
+  return wrapper;
+}
+
+function renderModelResponseCard(message: Message, response: ModelResponseSummary, canonicalResponseId: string, selectable: boolean): HTMLElement {
+  const selected = response.id === canonicalResponseId;
+  const card = document.createElement("section");
+  card.className = `multiModelCard${selected ? " canonical" : " muted"}${selectable ? " selectable" : ""}${response.status === "failed" ? " failed" : ""}`;
+  card.dataset.responseId = response.id;
+  card.dataset.modelConfigId = response.modelConfigId;
+
+  const header = document.createElement("div");
+  header.className = "multiModelCardHeader";
+  const title = document.createElement("strong");
+  title.textContent = modelDisplayName(response.modelConfigId);
+  const status = document.createElement("span");
+  status.className = "multiModelStatus";
+  status.textContent = selected ? "用于上下文" : response.primaryResponse ? "主模型候选" : "候选回答";
+  header.append(title, status);
+
+  const answer = document.createElement("div");
+  answer.className = "answerContent";
+  renderMarkdown(answer, response.status === "failed" ? `请求失败：${response.error || "unknown error"}` : response.content || "(empty response)");
+  const answerPanel = document.createElement("section");
+  answerPanel.className = "answerPanel sourceCapable";
+  attachAnswerSourceButton(answerPanel, () => response.status === "failed" ? `请求失败：${response.error || "unknown error"}` : response.content || "(empty response)", `${modelDisplayName(response.modelConfigId)} 回答内容`);
+  answerPanel.append(answer);
+  card.append(header, answerPanel);
+
+  if (selectable && !selected && response.status === "completed") {
+    card.addEventListener("click", async () => {
+      if (!card.classList.contains("selectable")) return;
+      await selectCanonicalResponse(message, response.id);
+    });
+  }
+  return card;
+}
+
+function lockExistingCanonicalSelection(): void {
+  messagesEl.querySelectorAll<HTMLElement>(".multiModelCard.selectable").forEach((card) => {
+    card.classList.remove("selectable");
+  });
+  messagesEl.querySelectorAll<HTMLElement>(".multiModelTip").forEach((tip) => {
+    tip.textContent = "本轮已进入历史，只保留用于上下文的回答。";
+  });
+}
+
+async function selectCanonicalResponse(message: Message, responseId: string): Promise<void> {
+  const turnId = String(message.metadata?.turnId || "");
+  const conversationId = message.conversationId || activeConversationId;
+  if (!turnId || !conversationId || !responseId || isStreaming) return;
+  try {
+    const body = await request<{ message: Message }>(`/api/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/canonical-response`, {
+      method: "PUT",
+      body: JSON.stringify({ responseId })
+    });
+    updateLatestAssistantMessage(body.message);
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function updateLatestAssistantMessage(message: Message): void {
+  const existing = Array.from(messagesEl.querySelectorAll<HTMLElement>(".message")).find((item) => item.dataset.messageId === (message.id || ""));
+  if (!existing) return;
+  const next = buildMultiModelMessageElement({ ...message, metadata: { ...(message.metadata || {}), latestSelectable: true } });
+  existing.replaceWith(next);
+  scrollMessages();
+}
+
+function updateMultiCanonicalStyles(streamState: StreamRenderState, completed: boolean): void {
+  const multi = streamState.multi;
+  if (!multi) return;
+  for (const state of multi.models.values()) {
+    const selected = state.responseId === multi.canonicalResponseId || (!multi.canonicalResponseId && state.modelConfigId === activeModelConfigId);
+    state.card.classList.toggle("canonical", selected);
+    state.card.classList.toggle("muted", !selected);
+    state.statusEl.textContent = selected ? "用于上下文" : completed ? "候选回答" : state.statusEl.textContent;
+  }
+  if (completed) {
+    multi.tipEl.textContent = "已选择用于后续上下文的回答。你仍可在发送下一轮前切换本轮回答。";
+  }
+}
+
+function modelDisplayName(modelConfigId: string): string {
+  const config = modelConfigs.find((item) => item.id === modelConfigId);
+  return config ? modelConfigLabel(config) : modelConfigId;
 }
 
 function addAssistantStream(): StreamRenderState {
@@ -1846,14 +2357,133 @@ function addAssistantStream(): StreamRenderState {
   thinkingDetails.append(thinkingHeader, traceList);
 
   const answerPanel = document.createElement("section");
-  answerPanel.className = "answerPanel hidden";
+  answerPanel.className = "answerPanel hidden sourceCapable";
   const answerContent = document.createElement("div");
   answerContent.className = "answerContent";
   answerPanel.append(answerContent);
 
   wrapper.append(thinkingDetails, answerPanel);
   appendMessageElement(wrapper, true);
-  return { wrapper, traceList, answerPanel, answerContent, answerMarkdown: "", loadingEl, thinkingDetails, hasFinalAnswer: false, hasTraceEvents: false };
+  const streamState: StreamRenderState = { wrapper, mode: "single", traceList, answerPanel, answerContent, answerMarkdown: "", loadingEl, thinkingDetails, hasFinalAnswer: false, hasTraceEvents: false };
+  attachAnswerSourceButton(answerPanel, () => streamState.answerMarkdown || "", "回答内容");
+  return streamState;
+}
+
+function addMultiAssistantStream(modelConfigIds: string[]): StreamRenderState {
+  const wrapper = document.createElement("article");
+  wrapper.className = "message assistant streaming multiModelMessage";
+
+  const tipEl = document.createElement("div");
+  tipEl.className = "multiModelTip";
+  tipEl.textContent = "默认使用主模型回答作为后续上下文。你可以在本轮结束后选择本轮采用的回答。";
+
+  const gridEl = document.createElement("div");
+  gridEl.className = `multiModelGrid count${Math.min(modelConfigIds.length, 3)}`;
+
+  const multi: MultiStreamState = {
+    tipEl,
+    gridEl,
+    models: new Map()
+  };
+  const streamState: StreamRenderState = {
+    wrapper,
+    mode: "multi",
+    multi
+  };
+  for (const modelConfigId of modelConfigIds) {
+    const state = createModelStreamCard(modelConfigId);
+    multi.models.set(modelConfigId, state);
+    gridEl.appendChild(state.card);
+  }
+  wrapper.append(tipEl, gridEl);
+  appendMessageElement(wrapper, true);
+  updateMultiCanonicalStyles(streamState, false);
+  return streamState;
+}
+
+function createModelStreamCard(modelConfigId: string, responseId?: string): ModelStreamState {
+  const card = document.createElement("section");
+  card.className = `multiModelCard streaming${modelConfigId === activeModelConfigId ? " canonical" : " muted"}`;
+  card.dataset.modelConfigId = modelConfigId;
+  if (responseId) card.dataset.responseId = responseId;
+
+  const header = document.createElement("div");
+  header.className = "multiModelCardHeader";
+  const title = document.createElement("strong");
+  title.textContent = modelDisplayName(modelConfigId);
+  const statusEl = document.createElement("span");
+  statusEl.className = "multiModelStatus";
+  statusEl.textContent = modelConfigId === activeModelConfigId ? "主模型 · 回答中" : "候选回答中";
+  header.append(title, statusEl);
+
+  const thinkingDetails = document.createElement("details");
+  thinkingDetails.className = "thinkingPanel compact";
+  thinkingDetails.open = true;
+  const thinkingHeader = document.createElement("summary");
+  thinkingHeader.className = "panelHeader";
+  const thinkingTitle = document.createElement("span");
+  thinkingTitle.textContent = "思考过程";
+  const loadingEl = document.createElement("span");
+  loadingEl.className = "loadingDots";
+  thinkingHeader.append(thinkingTitle, loadingEl);
+  const traceList = document.createElement("div");
+  traceList.className = "traceList";
+  thinkingDetails.append(thinkingHeader, traceList);
+
+  const answerPanel = document.createElement("section");
+  answerPanel.className = "answerPanel hidden sourceCapable";
+  const answerContent = document.createElement("div");
+  answerContent.className = "answerContent";
+  answerPanel.append(answerContent);
+
+  card.append(header, thinkingDetails, answerPanel);
+  const state: ModelStreamState = { responseId, modelConfigId, card, statusEl, traceList, answerPanel, answerContent, answerMarkdown: "", loadingEl, thinkingDetails, hasFinalAnswer: false, hasTraceEvents: false };
+  attachAnswerSourceButton(answerPanel, () => state.answerMarkdown || "", `${modelDisplayName(modelConfigId)} 回答内容`);
+  return state;
+}
+
+function appendModelTraceEvent(modelState: ModelStreamState, event: AgentStreamEvent): void {
+  modelState.hasTraceEvents = true;
+  const item = document.createElement("section");
+  item.className = `traceEvent ${event.type}`;
+  const body = document.createElement("pre");
+  body.className = "traceBody";
+  body.textContent = event.content || eventPayload(event);
+  item.append(body);
+  modelState.traceList.appendChild(item);
+  scrollMessages();
+}
+
+function appendModelAnswerDelta(modelState: ModelStreamState, delta: string): void {
+  if (!delta || modelState.hasFinalAnswer) return;
+  modelState.answerMarkdown += delta;
+  if (shouldSuppressLiveAnswer(modelState.answerMarkdown)) return;
+  renderMarkdown(modelState.answerContent, modelState.answerMarkdown);
+  modelState.answerPanel.classList.remove("hidden");
+  scrollMessages();
+}
+
+function resetModelLiveAnswer(modelState: ModelStreamState): void {
+  if (modelState.hasFinalAnswer) return;
+  modelState.answerMarkdown = "";
+  modelState.answerContent.innerHTML = "";
+  modelState.answerPanel.classList.add("hidden");
+}
+
+function finishModelStreamWithAnswer(modelState: ModelStreamState, content: string): void {
+  modelState.hasFinalAnswer = true;
+  modelState.answerMarkdown = content || "(empty response)";
+  renderMarkdown(modelState.answerContent, modelState.answerMarkdown);
+  modelState.answerPanel.classList.remove("hidden");
+  modelState.loadingEl.remove();
+  if (modelState.hasTraceEvents) {
+    modelState.thinkingDetails.open = false;
+  } else {
+    modelState.thinkingDetails.remove();
+  }
+  modelState.card.classList.remove("streaming");
+  modelState.statusEl.textContent = modelState.modelConfigId === activeModelConfigId ? "主模型" : "候选回答";
+  scrollMessages();
 }
 
 function appendTraceEvent(streamState: StreamRenderState, event: AgentStreamEvent): void {
@@ -1866,26 +2496,26 @@ function appendTraceEvent(streamState: StreamRenderState, event: AgentStreamEven
   body.textContent = event.content || eventPayload(event);
 
   item.append(body);
-  streamState.traceList.appendChild(item);
+  streamState.traceList?.appendChild(item);
   scrollMessages();
 }
 
 function appendAnswerDelta(streamState: StreamRenderState, delta: string): void {
   if (!delta || streamState.hasFinalAnswer) return;
-  streamState.answerMarkdown += delta;
-  if (shouldSuppressLiveAnswer(streamState.answerMarkdown)) {
+  streamState.answerMarkdown = (streamState.answerMarkdown || "") + delta;
+  if (shouldSuppressLiveAnswer(streamState.answerMarkdown || "")) {
     return;
   }
-  renderMarkdown(streamState.answerContent, streamState.answerMarkdown);
-  streamState.answerPanel.classList.remove("hidden");
+  if (streamState.answerContent) renderMarkdown(streamState.answerContent, streamState.answerMarkdown || "");
+  streamState.answerPanel?.classList.remove("hidden");
   scrollMessages();
 }
 
 function resetLiveAnswer(streamState: StreamRenderState): void {
   if (streamState.hasFinalAnswer) return;
   streamState.answerMarkdown = "";
-  streamState.answerContent.innerHTML = "";
-  streamState.answerPanel.classList.add("hidden");
+  if (streamState.answerContent) streamState.answerContent.innerHTML = "";
+  streamState.answerPanel?.classList.add("hidden");
 }
 
 function shouldSuppressLiveAnswer(markdown: string): boolean {
@@ -1897,13 +2527,13 @@ function shouldSuppressLiveAnswer(markdown: string): boolean {
 function finishStreamWithAnswer(streamState: StreamRenderState, content: string): void {
   streamState.hasFinalAnswer = true;
   streamState.answerMarkdown = content || "(empty response)";
-  renderMarkdown(streamState.answerContent, streamState.answerMarkdown);
-  streamState.answerPanel.classList.remove("hidden");
-  streamState.loadingEl.remove();
+  if (streamState.answerContent) renderMarkdown(streamState.answerContent, streamState.answerMarkdown);
+  streamState.answerPanel?.classList.remove("hidden");
+  streamState.loadingEl?.remove();
   if (streamState.hasTraceEvents) {
-    streamState.thinkingDetails.open = false;
+    if (streamState.thinkingDetails) streamState.thinkingDetails.open = false;
   } else {
-    streamState.thinkingDetails.remove();
+    streamState.thinkingDetails?.remove();
   }
   streamState.wrapper.classList.remove("streaming");
   scrollMessages();
@@ -1927,7 +2557,235 @@ function appendMessageElement(element: HTMLElement, shouldScroll: boolean): void
   const empty = messagesEl.querySelector(".emptyState");
   if (empty) empty.remove();
   messagesEl.appendChild(element);
+  renderMessageLocator();
   if (shouldScroll) scrollMessages();
+}
+
+function setSidebarCollapsed(collapsed: boolean): void {
+  sidebarCollapsed = collapsed;
+  shellEl.classList.toggle("sidebarCollapsed", collapsed);
+  sidebarToggleEl.setAttribute("aria-expanded", String(!collapsed));
+  const label = collapsed ? "展开侧边栏" : "收起侧边栏";
+  sidebarToggleEl.setAttribute("aria-label", label);
+  sidebarToggleEl.setAttribute("title", label);
+  sidebarToggleTipEl.textContent = label;
+  window.localStorage.setItem("sidebarCollapsed", String(collapsed));
+}
+
+function renderMessageLocator(): void {
+  messageLocatorEl.innerHTML = "";
+  const messages = Array.from(messagesEl.querySelectorAll<HTMLElement>(".message"));
+  const shouldShow = currentView === "chat" && messages.length > 1;
+  messageLocatorEl.classList.toggle("hidden", !shouldShow);
+  if (!shouldShow) return;
+
+  messages.forEach((message, index) => {
+    if (!message.id) {
+      message.id = `message-anchor-${index + 1}`;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `messageLocatorItem ${message.classList.contains("user") ? "user" : "assistant"}`;
+    button.textContent = locatorLabel(message, index);
+    button.setAttribute("aria-label", `定位到第 ${index + 1} 条对话`);
+    button.addEventListener("click", () => {
+      message.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    messageLocatorEl.appendChild(button);
+  });
+}
+
+function locatorLabel(message: HTMLElement, index: number): string {
+  const prefix = message.classList.contains("user") ? "Q" : "A";
+  const text = (message.querySelector(".messageContent, .answerContent")?.textContent || "").replace(/\s+/g, " ").trim();
+  if (!text) return `${prefix}${index + 1}`;
+  return `${prefix}${index + 1} · ${text.slice(0, 18)}`;
+}
+
+function attachAnswerSourceButton(container: HTMLElement, getContent: () => string, title: string): void {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "answerSourceButton";
+  button.textContent = "<>";
+  button.setAttribute("aria-label", "查看原始回答内容");
+  button.setAttribute("title", "查看回答内容");
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openSourceDialog(title, getContent());
+  });
+  container.prepend(button);
+}
+
+function openSourceDialog(title: string, content: string): void {
+  const preview = document.createElement("div");
+  preview.className = "sourcePreviewMarkdown answerContent";
+  renderMarkdown(preview, content || "(empty response)");
+  openAppModal({
+    title,
+    description: "Markdown 内容",
+    body: preview,
+    size: "wide",
+    actions: [
+      { label: "关闭", variant: "secondary", onClick: () => closeAppModal(false) }
+    ]
+  });
+}
+
+function openAppModal(options: {
+  title: string;
+  description?: string;
+  body?: HTMLElement;
+  actions?: ModalAction[];
+  onCancel?: () => void;
+  size?: "default" | "wide";
+}): void {
+  closeAppModal(false);
+  modalCancelHandler = options.onCancel || null;
+  modalRootEl.innerHTML = "";
+  modalRootEl.className = `modalRoot${options.size === "wide" ? " wide" : ""}`;
+  document.body.classList.add("modalOpen");
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "modalBackdrop";
+  backdrop.addEventListener("click", () => closeAppModal(true));
+
+  const dialog = document.createElement("section");
+  dialog.className = "modalDialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", options.title);
+
+  const header = document.createElement("div");
+  header.className = "modalHeader";
+  const title = document.createElement("h3");
+  title.textContent = options.title;
+  header.appendChild(title);
+  if (options.description) {
+    const description = document.createElement("p");
+    description.textContent = options.description;
+    header.appendChild(description);
+  }
+
+  const content = document.createElement("div");
+  content.className = "modalContent";
+  if (options.body) {
+    content.appendChild(options.body);
+  }
+
+  dialog.append(header, content);
+
+  if (options.actions?.length) {
+    const footer = document.createElement("div");
+    footer.className = "modalFooter";
+    for (const action of options.actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `modalAction ${action.variant || "secondary"}`;
+      button.textContent = action.label;
+      button.addEventListener("click", async () => {
+        const buttons = Array.from(footer.querySelectorAll<HTMLButtonElement>("button"));
+        buttons.forEach((item) => {
+          item.disabled = true;
+        });
+        try {
+          await action.onClick();
+        } finally {
+          if (!modalRootEl.classList.contains("hidden")) {
+            buttons.forEach((item) => {
+              item.disabled = false;
+            });
+          }
+        }
+      });
+      footer.appendChild(button);
+    }
+    dialog.appendChild(footer);
+  }
+
+  modalRootEl.append(backdrop, dialog);
+  window.setTimeout(() => {
+    dialog.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+  }, 0);
+}
+
+function closeAppModal(notifyCancel = true): void {
+  const cancel = modalCancelHandler;
+  modalCancelHandler = null;
+  modalRootEl.classList.add("hidden");
+  modalRootEl.className = "modalRoot hidden";
+  modalRootEl.innerHTML = "";
+  document.body.classList.remove("modalOpen");
+  if (notifyCancel) cancel?.();
+}
+
+function confirmDelete(title: string, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+      closeAppModal(false);
+    };
+    openAppModal({
+      title,
+      description: message,
+      onCancel: () => settle(false),
+      actions: [
+        { label: "取消", variant: "secondary", onClick: () => settle(false) },
+        { label: "确认删除", variant: "danger", onClick: () => settle(true) }
+      ]
+    });
+  });
+}
+
+function promptTextDialog(options: { title: string; label: string; placeholder?: string; confirmText?: string }): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+      closeAppModal(false);
+    };
+
+    const field = document.createElement("label");
+    field.className = "modalField";
+    const label = document.createElement("span");
+    label.textContent = options.label;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = options.placeholder || "";
+    const error = document.createElement("div");
+    error.className = "modalFieldError";
+    field.append(label, input, error);
+
+    const submit = () => {
+      const value = input.value.trim();
+      if (!value) {
+        error.textContent = `${options.label}不能为空`;
+        input.focus();
+        return;
+      }
+      settle(value);
+    };
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submit();
+      }
+    });
+
+    openAppModal({
+      title: options.title,
+      body: field,
+      onCancel: () => settle(null),
+      actions: [
+        { label: "取消", variant: "secondary", onClick: () => settle(null) },
+        { label: options.confirmText || "确认", variant: "primary", onClick: submit }
+      ]
+    });
+  });
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

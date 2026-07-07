@@ -30,10 +30,22 @@ type Agent struct {
 }
 
 type RunInput struct {
-	ConversationID  string
-	UserMessage     string
-	Model           model.Client
-	KnowledgeBaseID string
+	ConversationID            string
+	UserMessage               string
+	UserMessageID             string
+	Model                     model.Client
+	ModelConfigID             string
+	KnowledgeBaseID           string
+	RetrievalResult           *knowledge.RetrievalResult
+	RecentMessages            []contracts.Message
+	UseRecentMessages         bool
+	AssistantMessageID        string
+	AssistantMetadata         map[string]any
+	SkipUserMessageStore      bool
+	SuppressUserMessageEvent  bool
+	SkipAssistantMessageStore bool
+	SkipShortMemoryUpdate     bool
+	SuppressKnowledgeEvent    bool
 }
 
 type RunOutput struct {
@@ -103,22 +115,33 @@ func (a *Agent) RunStream(ctx context.Context, input RunInput, emit AgentEventHa
 }
 
 func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler) (RunOutput, error) {
-	recent := a.store.RecentMessages(input.ConversationID, 12)
+	recent := input.RecentMessages
+	if !input.UseRecentMessages {
+		recent = a.store.RecentMessages(input.ConversationID, 12)
+	}
+	userMessageID := strings.TrimSpace(input.UserMessageID)
+	if userMessageID == "" {
+		userMessageID = shared.NewID("msg")
+	}
 	userMessage := contracts.Message{
-		ID:             shared.NewID("msg"),
+		ID:             userMessageID,
 		ConversationID: input.ConversationID,
 		Role:           contracts.RoleUser,
 		Content:        input.UserMessage,
 		CreatedAt:      shared.Now(),
 	}
-	a.store.AddMessage(userMessage)
-	if err := emitAgentEvent(emit, contracts.AgentStreamEvent{
-		Type:    "user_message",
-		Title:   "用户输入",
-		Content: input.UserMessage,
-		Message: &userMessage,
-	}); err != nil {
-		return RunOutput{}, err
+	if !input.SkipUserMessageStore {
+		a.store.AddMessage(userMessage)
+	}
+	if !input.SuppressUserMessageEvent {
+		if err := emitAgentEvent(emit, contracts.AgentStreamEvent{
+			Type:    "user_message",
+			Title:   "用户输入",
+			Content: input.UserMessage,
+			Message: &userMessage,
+		}); err != nil {
+			return RunOutput{}, err
+		}
 	}
 
 	turnID := shared.NewID("turn")
@@ -166,7 +189,20 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 	finalAnswer := ""
 
 	knowledgeBaseID := strings.TrimSpace(input.KnowledgeBaseID)
-	if a.knowledge != nil && knowledgeBaseID != "" {
+	if input.RetrievalResult != nil && len(input.RetrievalResult.RerankedResults) > 0 {
+		retrievalResult = *input.RetrievalResult
+		modelMessages = insertKnowledgeContext(modelMessages, retrievalResult)
+		if !input.SuppressKnowledgeEvent {
+			if err := emitAgentEvent(emit, contracts.AgentStreamEvent{
+				Type:    "knowledge_retrieved",
+				Title:   "知识库召回",
+				Content: renderKnowledgeContext(retrievalResult),
+				TraceID: trace.ID,
+			}); err != nil {
+				return RunOutput{}, err
+			}
+		}
+	} else if a.knowledge != nil && knowledgeBaseID != "" {
 		result, err := a.knowledge.Retrieve(ctx, input.UserMessage, knowledge.RetrievalOptions{
 			ConversationID: input.ConversationID,
 			TopK:           8,
@@ -177,13 +213,15 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 		if err == nil && len(result.RerankedResults) > 0 {
 			retrievalResult = result
 			modelMessages = insertKnowledgeContext(modelMessages, result)
-			if err := emitAgentEvent(emit, contracts.AgentStreamEvent{
-				Type:    "knowledge_retrieved",
-				Title:   "知识库召回",
-				Content: renderKnowledgeContext(result),
-				TraceID: trace.ID,
-			}); err != nil {
-				return RunOutput{}, err
+			if !input.SuppressKnowledgeEvent {
+				if err := emitAgentEvent(emit, contracts.AgentStreamEvent{
+					Type:    "knowledge_retrieved",
+					Title:   "知识库召回",
+					Content: renderKnowledgeContext(result),
+					TraceID: trace.ID,
+				}); err != nil {
+					return RunOutput{}, err
+				}
 			}
 		} else if err != nil {
 			_ = emitAgentEvent(emit, contracts.AgentStreamEvent{
@@ -384,21 +422,33 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 	contextSnapshot := buildContextSnapshot(input.ConversationID, turnID, input.UserMessage, shortMemory, workingMemory, recent, allToolResults, availableTools, enabledSkills, retrievalResult, a.startup)
 	completedAt := shared.Now()
 
+	assistantMessageID := strings.TrimSpace(input.AssistantMessageID)
+	if assistantMessageID == "" {
+		assistantMessageID = shared.NewID("msg")
+	}
+	assistantMetadata := map[string]any{
+		"toolResults": allToolResults,
+		"loopRounds":  len(trace.LoopSteps) + 1,
+		"skills":      loadedSkillDetails,
+		"retrieval":   retrievalResult.RerankedResults,
+	}
+	for key, value := range input.AssistantMetadata {
+		assistantMetadata[key] = value
+	}
 	assistantMessage := contracts.Message{
-		ID:             shared.NewID("msg"),
+		ID:             assistantMessageID,
 		ConversationID: input.ConversationID,
 		Role:           contracts.RoleAssistant,
 		Content:        finalAnswer,
 		CreatedAt:      shared.Now(),
-		Metadata: map[string]any{
-			"toolResults": allToolResults,
-			"loopRounds":  len(trace.LoopSteps) + 1,
-			"skills":      loadedSkillDetails,
-			"retrieval":   retrievalResult.RerankedResults,
-		},
+		Metadata:       assistantMetadata,
 	}
-	a.store.AddMessage(assistantMessage)
-	a.store.UpdateShortMemory(input.ConversationID, input.UserMessage, finalAnswer, allToolResults)
+	if !input.SkipAssistantMessageStore {
+		a.store.AddMessage(assistantMessage)
+	}
+	if !input.SkipShortMemoryUpdate {
+		a.store.UpdateShortMemory(input.ConversationID, input.UserMessage, finalAnswer, allToolResults)
+	}
 	workingMemory = a.store.CompleteWorkingMemory(input.ConversationID, turnID, finalAnswer, finalTaskStatus(allToolResults))
 
 	trace.CompletedAt = &completedAt

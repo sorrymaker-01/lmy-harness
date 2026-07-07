@@ -185,7 +185,7 @@ func (m OpenAICompatibleModel) Chat(ctx context.Context, input Input) (contracts
 	if err != nil {
 		return contracts.ModelResponse{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.BaseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatEndpointURL(config.BaseURL), bytes.NewReader(body))
 	if err != nil {
 		return contracts.ModelResponse{}, err
 	}
@@ -404,6 +404,15 @@ func embeddingEndpointURL(baseURL string) string {
 	return baseURL + "/embeddings"
 }
 
+func chatEndpointURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	lower := strings.ToLower(baseURL)
+	if strings.HasSuffix(lower, "/chat/completions") || strings.Contains(lower, "/chat/completions/") {
+		return baseURL
+	}
+	return baseURL + "/chat/completions"
+}
+
 func (m OpenAICompatibleModel) ChatStream(ctx context.Context, input Input, onDelta StreamHandler) (contracts.ModelResponse, error) {
 	config := NormalizeConfig(m.config)
 	if strings.TrimSpace(config.APIKey) == "" {
@@ -414,7 +423,7 @@ func (m OpenAICompatibleModel) ChatStream(ctx context.Context, input Input, onDe
 	if err != nil {
 		return contracts.ModelResponse{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.BaseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatEndpointURL(config.BaseURL), bytes.NewReader(body))
 	if err != nil {
 		return contracts.ModelResponse{}, err
 	}

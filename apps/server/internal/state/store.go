@@ -3,6 +3,7 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -12,6 +13,12 @@ import (
 
 type Store struct {
 	db *sql.DB
+}
+
+var errNotLatestTurn = errors.New("chat turn is not the latest turn")
+
+func IsNotLatestTurn(err error) bool {
+	return errors.Is(err, errNotLatestTurn)
 }
 
 type ToolConfigRecord struct {
@@ -46,6 +53,36 @@ type MCPServerConfigRecord struct {
 	Headers   map[string]string `json:"headers,omitempty"`
 	Enabled   bool              `json:"enabled"`
 	UpdatedAt string            `json:"updatedAt"`
+}
+
+type ChatTurnRecord struct {
+	ID                   string         `json:"id"`
+	ConversationID       string         `json:"conversationId"`
+	UserMessageID        string         `json:"userMessageId"`
+	AssistantMessageID   string         `json:"assistantMessageId"`
+	Mode                 string         `json:"mode"`
+	PrimaryModelConfigID string         `json:"primaryModelConfigId"`
+	CanonicalResponseID  string         `json:"canonicalResponseId"`
+	Status               string         `json:"status"`
+	Metadata             map[string]any `json:"metadata"`
+	CreatedAt            string         `json:"createdAt"`
+	UpdatedAt            string         `json:"updatedAt"`
+}
+
+type ModelResponseRecord struct {
+	ID              string         `json:"id"`
+	TurnID          string         `json:"turnId"`
+	ConversationID  string         `json:"conversationId"`
+	ModelConfigID   string         `json:"modelConfigId"`
+	TraceID         string         `json:"traceId"`
+	Content         string         `json:"content"`
+	Status          string         `json:"status"`
+	Error           string         `json:"error,omitempty"`
+	PrimaryResponse bool           `json:"primaryResponse"`
+	Metadata        map[string]any `json:"metadata"`
+	CreatedAt       string         `json:"createdAt"`
+	CompletedAt     string         `json:"completedAt,omitempty"`
+	UpdatedAt       string         `json:"updatedAt"`
 }
 
 func NewStore(db *sql.DB) *Store {
@@ -472,6 +509,246 @@ func (s *Store) SetMCPServerEnabled(name string, enabled bool) error {
 	return nil
 }
 
+func (s *Store) SaveChatTurn(record ChatTurnRecord) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	record = normalizeChatTurnRecord(record)
+	if record.ID == "" || record.ConversationID == "" || record.UserMessageID == "" {
+		return nil
+	}
+	metadataJSON, err := json.Marshal(record.Metadata)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO chat_turns(id, conversation_id, user_message_id, assistant_message_id, mode, primary_model_config_id, canonical_response_id, status, metadata_json, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET
+			conversation_id = excluded.conversation_id,
+			user_message_id = excluded.user_message_id,
+			assistant_message_id = excluded.assistant_message_id,
+			mode = excluded.mode,
+			primary_model_config_id = excluded.primary_model_config_id,
+			canonical_response_id = excluded.canonical_response_id,
+			status = excluded.status,
+			metadata_json = excluded.metadata_json,
+			updated_at = excluded.updated_at`,
+		record.ID,
+		record.ConversationID,
+		record.UserMessageID,
+		record.AssistantMessageID,
+		record.Mode,
+		record.PrimaryModelConfigID,
+		record.CanonicalResponseID,
+		record.Status,
+		string(metadataJSON),
+		record.CreatedAt,
+		record.UpdatedAt,
+	)
+	return err
+}
+
+func (s *Store) ChatTurn(id string) (ChatTurnRecord, bool, error) {
+	if s == nil || s.db == nil {
+		return ChatTurnRecord{}, false, nil
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ChatTurnRecord{}, false, nil
+	}
+	row := s.db.QueryRow(
+		`SELECT id, conversation_id, user_message_id, assistant_message_id, mode, primary_model_config_id, canonical_response_id, status, metadata_json, created_at, updated_at
+		 FROM chat_turns
+		 WHERE id = ?`,
+		id,
+	)
+	record, err := scanChatTurn(row)
+	if err == sql.ErrNoRows {
+		return ChatTurnRecord{}, false, nil
+	}
+	if err != nil {
+		return ChatTurnRecord{}, false, err
+	}
+	return record, true, nil
+}
+
+func (s *Store) LatestChatTurn(conversationID string) (ChatTurnRecord, bool, error) {
+	if s == nil || s.db == nil {
+		return ChatTurnRecord{}, false, nil
+	}
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return ChatTurnRecord{}, false, nil
+	}
+	row := s.db.QueryRow(
+		`SELECT id, conversation_id, user_message_id, assistant_message_id, mode, primary_model_config_id, canonical_response_id, status, metadata_json, created_at, updated_at
+		 FROM chat_turns
+		 WHERE conversation_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		conversationID,
+	)
+	record, err := scanChatTurn(row)
+	if err == sql.ErrNoRows {
+		return ChatTurnRecord{}, false, nil
+	}
+	if err != nil {
+		return ChatTurnRecord{}, false, err
+	}
+	return record, true, nil
+}
+
+func (s *Store) SaveModelResponse(record ModelResponseRecord) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	record = normalizeModelResponseRecord(record)
+	if record.ID == "" || record.TurnID == "" || record.ConversationID == "" {
+		return nil
+	}
+	metadataJSON, err := json.Marshal(record.Metadata)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO model_responses(id, turn_id, conversation_id, model_config_id, trace_id, content, status, error, primary_response, metadata_json, created_at, completed_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?)
+		 ON CONFLICT(id) DO UPDATE SET
+			turn_id = excluded.turn_id,
+			conversation_id = excluded.conversation_id,
+			model_config_id = excluded.model_config_id,
+			trace_id = excluded.trace_id,
+			content = excluded.content,
+			status = excluded.status,
+			error = excluded.error,
+			primary_response = excluded.primary_response,
+			metadata_json = excluded.metadata_json,
+			completed_at = excluded.completed_at,
+			updated_at = excluded.updated_at`,
+		record.ID,
+		record.TurnID,
+		record.ConversationID,
+		record.ModelConfigID,
+		record.TraceID,
+		record.Content,
+		record.Status,
+		record.Error,
+		boolInt(record.PrimaryResponse),
+		string(metadataJSON),
+		record.CreatedAt,
+		record.CompletedAt,
+		record.UpdatedAt,
+	)
+	return err
+}
+
+func (s *Store) ModelResponse(id string) (ModelResponseRecord, bool, error) {
+	if s == nil || s.db == nil {
+		return ModelResponseRecord{}, false, nil
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ModelResponseRecord{}, false, nil
+	}
+	row := s.db.QueryRow(
+		`SELECT id, turn_id, conversation_id, model_config_id, trace_id, content, status, error, primary_response, metadata_json, created_at, COALESCE(completed_at, ''), updated_at
+		 FROM model_responses
+		 WHERE id = ?`,
+		id,
+	)
+	record, err := scanModelResponse(row)
+	if err == sql.ErrNoRows {
+		return ModelResponseRecord{}, false, nil
+	}
+	if err != nil {
+		return ModelResponseRecord{}, false, err
+	}
+	return record, true, nil
+}
+
+func (s *Store) ModelResponsesByTurn(turnID string) ([]ModelResponseRecord, error) {
+	if s == nil || s.db == nil {
+		return []ModelResponseRecord{}, nil
+	}
+	turnID = strings.TrimSpace(turnID)
+	if turnID == "" {
+		return []ModelResponseRecord{}, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT id, turn_id, conversation_id, model_config_id, trace_id, content, status, error, primary_response, metadata_json, created_at, COALESCE(completed_at, ''), updated_at
+		 FROM model_responses
+		 WHERE turn_id = ?
+		 ORDER BY primary_response DESC, created_at, id`,
+		turnID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := []ModelResponseRecord{}
+	for rows.Next() {
+		record, err := scanModelResponse(rows)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}
+
+func (s *Store) SelectCanonicalResponse(conversationID string, turnID string, responseID string) (ChatTurnRecord, ModelResponseRecord, []ModelResponseRecord, error) {
+	if s == nil || s.db == nil {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, sql.ErrNoRows
+	}
+	turn, ok, err := s.ChatTurn(turnID)
+	if err != nil {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, err
+	}
+	if !ok || turn.ConversationID != strings.TrimSpace(conversationID) {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, sql.ErrNoRows
+	}
+	latest, ok, err := s.LatestChatTurn(conversationID)
+	if err != nil {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, err
+	}
+	if !ok || latest.ID != turn.ID {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, errNotLatestTurn
+	}
+	var latestMessageID string
+	if err := s.db.QueryRow(
+		`SELECT id
+		 FROM messages
+		 WHERE conversation_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		conversationID,
+	).Scan(&latestMessageID); err != nil {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, err
+	}
+	if strings.TrimSpace(turn.AssistantMessageID) == "" || latestMessageID != turn.AssistantMessageID {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, errNotLatestTurn
+	}
+	response, ok, err := s.ModelResponse(responseID)
+	if err != nil {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, err
+	}
+	if !ok || response.TurnID != turn.ID || response.ConversationID != turn.ConversationID || response.Status != "completed" {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, sql.ErrNoRows
+	}
+	turn.CanonicalResponseID = response.ID
+	turn.Status = "completed"
+	turn.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if err := s.SaveChatTurn(turn); err != nil {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, err
+	}
+	responses, err := s.ModelResponsesByTurn(turn.ID)
+	if err != nil {
+		return ChatTurnRecord{}, ModelResponseRecord{}, nil, err
+	}
+	return turn, response, responses, nil
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -519,6 +796,119 @@ func normalizeModelType(value string) string {
 		return "embedding"
 	default:
 		return "reasoning"
+	}
+}
+
+type sqlScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanChatTurn(scanner sqlScanner) (ChatTurnRecord, error) {
+	var record ChatTurnRecord
+	var metadataJSON string
+	if err := scanner.Scan(
+		&record.ID,
+		&record.ConversationID,
+		&record.UserMessageID,
+		&record.AssistantMessageID,
+		&record.Mode,
+		&record.PrimaryModelConfigID,
+		&record.CanonicalResponseID,
+		&record.Status,
+		&metadataJSON,
+		&record.CreatedAt,
+		&record.UpdatedAt,
+	); err != nil {
+		return ChatTurnRecord{}, err
+	}
+	record.Metadata = map[string]any{}
+	_ = json.Unmarshal([]byte(metadataJSON), &record.Metadata)
+	return normalizeChatTurnRecord(record), nil
+}
+
+func scanModelResponse(scanner sqlScanner) (ModelResponseRecord, error) {
+	var record ModelResponseRecord
+	var primary int
+	var metadataJSON string
+	if err := scanner.Scan(
+		&record.ID,
+		&record.TurnID,
+		&record.ConversationID,
+		&record.ModelConfigID,
+		&record.TraceID,
+		&record.Content,
+		&record.Status,
+		&record.Error,
+		&primary,
+		&metadataJSON,
+		&record.CreatedAt,
+		&record.CompletedAt,
+		&record.UpdatedAt,
+	); err != nil {
+		return ModelResponseRecord{}, err
+	}
+	record.PrimaryResponse = primary != 0
+	record.Metadata = map[string]any{}
+	_ = json.Unmarshal([]byte(metadataJSON), &record.Metadata)
+	return normalizeModelResponseRecord(record), nil
+}
+
+func normalizeChatTurnRecord(record ChatTurnRecord) ChatTurnRecord {
+	record.ID = strings.TrimSpace(record.ID)
+	record.ConversationID = strings.TrimSpace(record.ConversationID)
+	record.UserMessageID = strings.TrimSpace(record.UserMessageID)
+	record.AssistantMessageID = strings.TrimSpace(record.AssistantMessageID)
+	switch strings.ToLower(strings.TrimSpace(record.Mode)) {
+	case "multi":
+		record.Mode = "multi"
+	default:
+		record.Mode = "single"
+	}
+	record.PrimaryModelConfigID = strings.TrimSpace(record.PrimaryModelConfigID)
+	record.CanonicalResponseID = strings.TrimSpace(record.CanonicalResponseID)
+	record.Status = normalizeRunStatus(record.Status)
+	if record.Metadata == nil {
+		record.Metadata = map[string]any{}
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if strings.TrimSpace(record.CreatedAt) == "" {
+		record.CreatedAt = now
+	}
+	if strings.TrimSpace(record.UpdatedAt) == "" {
+		record.UpdatedAt = now
+	}
+	return record
+}
+
+func normalizeModelResponseRecord(record ModelResponseRecord) ModelResponseRecord {
+	record.ID = strings.TrimSpace(record.ID)
+	record.TurnID = strings.TrimSpace(record.TurnID)
+	record.ConversationID = strings.TrimSpace(record.ConversationID)
+	record.ModelConfigID = strings.TrimSpace(record.ModelConfigID)
+	record.TraceID = strings.TrimSpace(record.TraceID)
+	record.Status = normalizeRunStatus(record.Status)
+	if record.Metadata == nil {
+		record.Metadata = map[string]any{}
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if strings.TrimSpace(record.CreatedAt) == "" {
+		record.CreatedAt = now
+	}
+	if strings.TrimSpace(record.UpdatedAt) == "" {
+		record.UpdatedAt = now
+	}
+	if record.Status == "completed" && strings.TrimSpace(record.CompletedAt) == "" {
+		record.CompletedAt = now
+	}
+	return record
+}
+
+func normalizeRunStatus(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "completed", "failed", "running":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "running"
 	}
 }
 

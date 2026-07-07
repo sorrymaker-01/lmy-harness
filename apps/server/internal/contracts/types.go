@@ -134,6 +134,11 @@ type AgentStreamEvent struct {
 	Round         int            `json:"round,omitempty"`
 	Title         string         `json:"title,omitempty"`
 	Content       string         `json:"content,omitempty"`
+	TurnID        string         `json:"turnId,omitempty"`
+	ResponseID    string         `json:"responseId,omitempty"`
+	ModelConfigID string         `json:"modelConfigId,omitempty"`
+	Primary       bool           `json:"primary,omitempty"`
+	Canonical     bool           `json:"canonical,omitempty"`
 	Message       *Message       `json:"message,omitempty"`
 	Assistant     *LLMMessage    `json:"assistant,omitempty"`
 	ToolCall      *ToolCall      `json:"toolCall,omitempty"`

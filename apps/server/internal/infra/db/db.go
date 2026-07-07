@@ -73,6 +73,42 @@ func migrate(database *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_conversation_created
 			ON messages(conversation_id, created_at)`,
+		`CREATE TABLE IF NOT EXISTS chat_turns (
+			id TEXT PRIMARY KEY,
+			conversation_id TEXT NOT NULL,
+			user_message_id TEXT NOT NULL,
+			assistant_message_id TEXT NOT NULL DEFAULT '',
+			mode TEXT NOT NULL DEFAULT 'single',
+			primary_model_config_id TEXT NOT NULL DEFAULT '',
+			canonical_response_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'running',
+			metadata_json TEXT NOT NULL DEFAULT '{}',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+			FOREIGN KEY (user_message_id) REFERENCES messages(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_turns_conversation_created
+			ON chat_turns(conversation_id, created_at)`,
+		`CREATE TABLE IF NOT EXISTS model_responses (
+			id TEXT PRIMARY KEY,
+			turn_id TEXT NOT NULL,
+			conversation_id TEXT NOT NULL,
+			model_config_id TEXT NOT NULL,
+			trace_id TEXT NOT NULL DEFAULT '',
+			content TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'running',
+			error TEXT NOT NULL DEFAULT '',
+			primary_response INTEGER NOT NULL DEFAULT 0,
+			metadata_json TEXT NOT NULL DEFAULT '{}',
+			created_at TEXT NOT NULL,
+			completed_at TEXT,
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY (turn_id) REFERENCES chat_turns(id) ON DELETE CASCADE,
+			FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_model_responses_turn
+			ON model_responses(turn_id, created_at)`,
 		`CREATE TABLE IF NOT EXISTS conversation_memories (
 			conversation_id TEXT PRIMARY KEY,
 			id TEXT NOT NULL,

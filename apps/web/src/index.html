@@ -9,6 +9,9 @@
   <body>
     <main class="shell">
       <aside class="sidebar">
+        <button id="sidebarToggle" class="sidebarToggle" type="button" aria-label="收起侧边栏" aria-expanded="true">
+          <span id="sidebarToggleTip" class="sidebarToggleTip">收起侧边栏</span>
+        </button>
         <div class="sidebarHeader">
           <h1>Harness Agent</h1>
           <button id="newConversation" class="newChatButton" type="button">新建会话</button>
@@ -30,6 +33,7 @@
         </header>
 
         <div id="messages" class="messages" aria-live="polite"></div>
+        <nav id="messageLocator" class="messageLocator hidden" aria-label="对话定位"></nav>
 
         <section id="skillPage" class="skillPage hidden" aria-label="技能库">
           <div class="skillShell">
@@ -76,14 +80,26 @@
             <textarea id="messageInput" rows="2" placeholder="Message Harness Agent, or type / for skills"></textarea>
             <div id="skillMenu" class="slashMenu hidden" role="listbox" aria-label="Skill 快捷菜单"></div>
             <div class="composerControls">
-              <select id="ragKnowledgeSelector" class="knowledgeSelector" aria-label="知识库选择"></select>
-              <select id="modelSelector" class="modelSelector" aria-label="模型选择"></select>
+              <label class="composerControlGroup">
+                <span>知识库选择</span>
+                <select id="ragKnowledgeSelector" class="knowledgeSelector" aria-label="知识库选择"></select>
+              </label>
+              <label class="composerControlGroup">
+                <span>模型选择</span>
+                <select id="primaryModelSelector" class="modelSelector" aria-label="模型选择"></select>
+              </label>
+              <div class="multiModelPicker">
+                <button id="multiModelToggle" class="multiModelToggle" type="button" aria-expanded="false">开启多模型回答</button>
+                <div id="multiModelPopover" class="multiModelPopover hidden" role="dialog" aria-label="多模型回答模型选择"></div>
+              </div>
             </div>
+            <div id="modelModeHint" class="modelModeHint">默认只使用模型选择中的模型回答；点击“开启多模型回答”可选择最多 2 个副模型并列回答。</div>
           </div>
-          <button id="sendButton" type="submit">Send</button>
+          <button id="sendButton" type="submit">发送</button>
         </form>
       </section>
     </main>
+    <div id="modalRoot" class="modalRoot hidden" aria-live="polite"></div>
     <script type="module" src="/main.js"></script>
   </body>
 </html>

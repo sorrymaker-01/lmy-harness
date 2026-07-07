@@ -80,6 +80,18 @@ func (s *PersistentStore) AddMessage(message contracts.Message) {
 	_ = s.upsertMessage(message)
 }
 
+func (s *PersistentStore) UpdateMessage(message contracts.Message) bool {
+	updated := s.InMemoryStore.UpdateMessage(message)
+	if !updated {
+		return false
+	}
+	if conversation, ok := s.conversation(message.ConversationID); ok {
+		_ = s.upsertConversation(conversation)
+	}
+	_ = s.upsertMessage(message)
+	return true
+}
+
 func (s *PersistentStore) UpdateShortMemory(conversationID string, userMessage string, assistantAnswer string, toolResults []contracts.ToolResult) contracts.ShortMemory {
 	memory := s.InMemoryStore.UpdateShortMemory(conversationID, userMessage, assistantAnswer, toolResults)
 	_ = s.upsertShortMemory(memory)

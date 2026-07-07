@@ -15,6 +15,7 @@ type Store interface {
 	DeleteConversation(conversationID string) bool
 	ListConversations() []contracts.Conversation
 	AddMessage(message contracts.Message)
+	UpdateMessage(message contracts.Message) bool
 	Messages(conversationID string) []contracts.Message
 	RecentMessages(conversationID string, limit int) []contracts.Message
 	GetShortMemory(conversationID string) contracts.ShortMemory
@@ -119,6 +120,30 @@ func (s *InMemoryStore) AddMessage(message contracts.Message) {
 		conversation.Title = shared.TrimRunes(message.Content, 48)
 	}
 	s.conversations[message.ConversationID] = conversation
+}
+
+func (s *InMemoryStore) UpdateMessage(message contracts.Message) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := s.messages[message.ConversationID]
+	for i := range items {
+		if items[i].ID != message.ID {
+			continue
+		}
+		if message.CreatedAt.IsZero() {
+			message.CreatedAt = items[i].CreatedAt
+		}
+		if message.Metadata == nil {
+			message.Metadata = map[string]any{}
+		}
+		items[i] = message
+		s.messages[message.ConversationID] = items
+		conversation := s.conversations[message.ConversationID]
+		conversation.UpdatedAt = shared.Now()
+		s.conversations[message.ConversationID] = conversation
+		return true
+	}
+	return false
 }
 
 func (s *InMemoryStore) Messages(conversationID string) []contracts.Message {

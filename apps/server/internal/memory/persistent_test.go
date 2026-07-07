@@ -86,3 +86,38 @@ func TestPersistentStoreDeleteConversation(t *testing.T) {
 		t.Fatalf("deleted memory was restored: %#v", memory)
 	}
 }
+
+func TestPersistentStoreUpdatesMessage(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewPersistentStore(dir)
+	if err != nil {
+		t.Fatalf("NewPersistentStore returned error: %v", err)
+	}
+	conversation := store.CreateConversation("Update message")
+	message := contracts.Message{
+		ID:             shared.NewID("msg"),
+		ConversationID: conversation.ID,
+		Role:           contracts.RoleAssistant,
+		Content:        "first answer",
+		CreatedAt:      shared.Now(),
+		Metadata:       map[string]any{"canonicalResponseId": "resp-a"},
+	}
+	store.AddMessage(message)
+	message.Content = "second answer"
+	message.Metadata = map[string]any{"canonicalResponseId": "resp-b"}
+	if !store.UpdateMessage(message) {
+		t.Fatal("UpdateMessage returned false")
+	}
+
+	restored, err := NewPersistentStore(dir)
+	if err != nil {
+		t.Fatalf("restore returned error: %v", err)
+	}
+	messages := restored.Messages(conversation.ID)
+	if len(messages) != 1 || messages[0].Content != "second answer" {
+		t.Fatalf("unexpected restored messages: %#v", messages)
+	}
+	if messages[0].Metadata["canonicalResponseId"] != "resp-b" {
+		t.Fatalf("metadata was not updated: %#v", messages[0].Metadata)
+	}
+}

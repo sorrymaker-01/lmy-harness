@@ -40,6 +40,37 @@ func TestEmbeddingEndpointURL(t *testing.T) {
 	}
 }
 
+func TestChatEndpointURL(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+		want string
+	}{
+		{
+			name: "api base url",
+			base: "https://api.deepseek.com",
+			want: "https://api.deepseek.com/chat/completions",
+		},
+		{
+			name: "full chat completions endpoint",
+			base: "https://api.deepseek.com/chat/completions",
+			want: "https://api.deepseek.com/chat/completions",
+		},
+		{
+			name: "trailing slash",
+			base: "https://api.deepseek.com/",
+			want: "https://api.deepseek.com/chat/completions",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := chatEndpointURL(tt.base); got != tt.want {
+				t.Fatalf("chatEndpointURL(%q) = %q, want %q", tt.base, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestOpenAIEmbeddingClientStandardBatch(t *testing.T) {
 	client := NewOpenAIEmbeddingClient(Config{
 		APIKey:         "test-key",

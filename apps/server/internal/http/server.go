@@ -191,6 +191,7 @@ func (s *HTTPServer) Register(h *server.Hertz) {
 	h.GET("/api/conversations/:conversationId/traces", s.handleTraces)
 	h.POST("/api/conversations/:conversationId/chat", s.handleChat)
 	h.POST("/api/conversations/:conversationId/chat/stream", s.handleChatStream)
+	h.PUT("/api/conversations/:conversationId/turns/:turnId/canonical-response", s.handleSelectCanonicalResponse)
 	h.GET("/api/model/config", s.handleModelConfig)
 	h.PUT("/api/model/config", s.handleUpdateModelConfig)
 	h.GET("/api/model/configs", s.handleModelConfigs)
@@ -284,11 +285,7 @@ func (s *HTTPServer) handleTraces(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *HTTPServer) handleChat(ctx context.Context, c *app.RequestContext) {
-	var body struct {
-		Message         string `json:"message"`
-		ModelConfigID   string `json:"modelConfigId"`
-		KnowledgeBaseID string `json:"knowledgeBaseId"`
-	}
+	var body chatRequestBody
 	if err := c.BindJSON(&body); err != nil {
 		writeHertzError(c, consts.StatusBadRequest, err.Error())
 		return
@@ -297,9 +294,18 @@ func (s *HTTPServer) handleChat(ctx context.Context, c *app.RequestContext) {
 		writeHertzError(c, consts.StatusBadRequest, "message is required")
 		return
 	}
+	modelIDs, primaryModelID, err := s.normalizeChatModelSelection(body)
+	if err != nil {
+		writeHertzError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	if len(modelIDs) > 1 {
+		writeHertzError(c, consts.StatusBadRequest, "multi-model chat requires /chat/stream")
+		return
+	}
 
 	conversationID := c.Param("conversationId")
-	modelClient, err := s.modelClientForRequest(body.ModelConfigID)
+	modelClient, err := s.modelClientForRequest(primaryModelID)
 	if err != nil {
 		writeHertzError(c, consts.StatusBadRequest, err.Error())
 		return
@@ -308,6 +314,7 @@ func (s *HTTPServer) handleChat(ctx context.Context, c *app.RequestContext) {
 		ConversationID:  conversationID,
 		UserMessage:     body.Message,
 		Model:           modelClient,
+		ModelConfigID:   primaryModelID,
 		KnowledgeBaseID: body.KnowledgeBaseID,
 	})
 	if err != nil {
@@ -318,11 +325,7 @@ func (s *HTTPServer) handleChat(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *HTTPServer) handleChatStream(ctx context.Context, c *app.RequestContext) {
-	var body struct {
-		Message         string `json:"message"`
-		ModelConfigID   string `json:"modelConfigId"`
-		KnowledgeBaseID string `json:"knowledgeBaseId"`
-	}
+	var body chatRequestBody
 	if err := c.BindJSON(&body); err != nil {
 		writeHertzError(c, consts.StatusBadRequest, err.Error())
 		return
@@ -337,7 +340,28 @@ func (s *HTTPServer) handleChatStream(ctx context.Context, c *app.RequestContext
 	defer writer.Close()
 
 	conversationID := c.Param("conversationId")
-	modelClient, err := s.modelClientForRequest(body.ModelConfigID)
+	modelIDs, primaryModelID, err := s.normalizeChatModelSelection(body)
+	if err != nil {
+		_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
+			Type:      "error",
+			Title:     "请求失败",
+			Content:   err.Error(),
+			CreatedAt: shared.Now(),
+		})
+		return
+	}
+	if len(modelIDs) > 1 {
+		if err := s.runMultiModelChatStream(ctx, writer, conversationID, body, modelIDs, primaryModelID); err != nil {
+			_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
+				Type:      "error",
+				Title:     "请求失败",
+				Content:   err.Error(),
+				CreatedAt: shared.Now(),
+			})
+		}
+		return
+	}
+	modelClient, err := s.modelClientForRequest(primaryModelID)
 	if err != nil {
 		_ = writeSSEEvent(writer, contracts.AgentStreamEvent{
 			Type:      "error",
@@ -351,8 +375,10 @@ func (s *HTTPServer) handleChatStream(ctx context.Context, c *app.RequestContext
 		ConversationID:  conversationID,
 		UserMessage:     body.Message,
 		Model:           modelClient,
+		ModelConfigID:   primaryModelID,
 		KnowledgeBaseID: body.KnowledgeBaseID,
 	}, func(event contracts.AgentStreamEvent) error {
+		event.ModelConfigID = primaryModelID
 		return writeSSEEvent(writer, event)
 	})
 	if err != nil {
@@ -1170,7 +1196,15 @@ func (s *HTTPServer) modelClientForRequest(configID string) (model.Client, error
 	if record.ModelType != "reasoning" {
 		return nil, fmt.Errorf("model config %q is an embedding model and cannot be used for chat", configID)
 	}
+	if isOpenAICompatibleAnthropicBaseURL(record) {
+		return nil, fmt.Errorf("model config %q uses Anthropic base_url %q, but provider %q sends OpenAI-compatible /chat/completions requests; use https://api.deepseek.com for DeepSeek OpenAI-compatible chat", configID, record.BaseURL, record.Provider)
+	}
 	return model.NewOpenAICompatibleModel(modelConfigFromRecord(record)), nil
+}
+
+func isOpenAICompatibleAnthropicBaseURL(record state.ModelConfigRecord) bool {
+	return strings.EqualFold(strings.TrimSpace(record.Provider), "openai-compatible") &&
+		strings.Contains(strings.ToLower(strings.TrimSpace(record.BaseURL)), "/anthropic")
 }
 
 func secretPreview(value string) string {

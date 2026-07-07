@@ -295,6 +295,54 @@ func TestModelConfigPersistence(t *testing.T) {
 	}
 }
 
+func TestSelectCanonicalResponseOnlyAllowsLatestTurn(t *testing.T) {
+	store, database := newTestStore(t)
+	defer database.Close()
+	now := "2026-07-07T00:00:00Z"
+	if _, err := database.Exec(`INSERT INTO conversations(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`, "conv", "Conversation", now, now); err != nil {
+		t.Fatalf("insert conversation: %v", err)
+	}
+	if _, err := database.Exec(`INSERT INTO messages(id, conversation_id, role, content, created_at) VALUES (?, ?, 'user', ?, ?)`, "user-msg", "conv", "question", now); err != nil {
+		t.Fatalf("insert user message: %v", err)
+	}
+	if _, err := database.Exec(`INSERT INTO messages(id, conversation_id, role, content, created_at) VALUES (?, ?, 'assistant', ?, ?)`, "assistant-msg", "conv", "answer a", "2026-07-07T00:00:01Z"); err != nil {
+		t.Fatalf("insert assistant message: %v", err)
+	}
+	turn := ChatTurnRecord{
+		ID:                   "turn",
+		ConversationID:       "conv",
+		UserMessageID:        "user-msg",
+		AssistantMessageID:   "assistant-msg",
+		Mode:                 "multi",
+		PrimaryModelConfigID: "model-a",
+		Status:               "running",
+	}
+	if err := store.SaveChatTurn(turn); err != nil {
+		t.Fatalf("save chat turn: %v", err)
+	}
+	for _, response := range []ModelResponseRecord{
+		{ID: "resp-a", TurnID: "turn", ConversationID: "conv", ModelConfigID: "model-a", Content: "answer a", Status: "completed", PrimaryResponse: true},
+		{ID: "resp-b", TurnID: "turn", ConversationID: "conv", ModelConfigID: "model-b", Content: "answer b", Status: "completed"},
+	} {
+		if err := store.SaveModelResponse(response); err != nil {
+			t.Fatalf("save model response: %v", err)
+		}
+	}
+	updated, selected, responses, err := store.SelectCanonicalResponse("conv", "turn", "resp-b")
+	if err != nil {
+		t.Fatalf("select canonical response: %v", err)
+	}
+	if updated.CanonicalResponseID != "resp-b" || selected.ID != "resp-b" || len(responses) != 2 {
+		t.Fatalf("unexpected selection: turn=%#v selected=%#v responses=%d", updated, selected, len(responses))
+	}
+	if _, err := database.Exec(`INSERT INTO messages(id, conversation_id, role, content, created_at) VALUES (?, ?, 'user', ?, ?)`, "newer-user", "conv", "next question", "2026-07-07T00:00:02Z"); err != nil {
+		t.Fatalf("insert newer message: %v", err)
+	}
+	if _, _, _, err := store.SelectCanonicalResponse("conv", "turn", "resp-a"); !IsNotLatestTurn(err) {
+		t.Fatalf("expected not latest turn error, got %v", err)
+	}
+}
+
 func newTestStore(t *testing.T) (*Store, *sql.DB) {
 	t.Helper()
 	database, err := statedb.Open(filepath.Join(t.TempDir(), "state.db"))

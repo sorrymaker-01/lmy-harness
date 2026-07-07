@@ -234,7 +234,7 @@ h2 {
 }
 
 .skillSearchInput:focus {
-  outline: 2px solid #b9dcca;
+  outline: 2px solid #d0d0ca;
   outline-offset: 1px;
 }
 
@@ -283,11 +283,11 @@ h2 {
 
 .knowledgeBaseAddButton {
   margin-left: auto;
-  background: #176b46;
+  background: #202123;
 }
 
 .knowledgeBaseAddButton:hover {
-  background: #1f7a53;
+  background: #303236;
 }
 
 .knowledgeLayout {
@@ -315,8 +315,8 @@ h2 {
 }
 
 .knowledgeBaseItem.active {
-  border-color: #9bcdb4;
-  background: #f0f8f4;
+  border-color: #242424;
+  background: #f1f1ee;
 }
 
 .knowledgeBaseInfo {
@@ -393,10 +393,10 @@ h2 {
   width: 50px;
   height: 50px;
   place-items: center;
-  border: 1px solid #d8e4dd;
+  border: 1px solid #deded8;
   border-radius: 8px;
-  background: #eef8f2;
-  color: #176b46;
+  background: #f1f1ee;
+  color: #242424;
   font-size: 11px;
   font-weight: 850;
 }
@@ -461,8 +461,8 @@ h2 {
 }
 
 .modelConfigItem.active {
-  border-color: #b9dcca;
-  background: #f3fbf6;
+  border-color: #242424;
+  background: #f1f1ee;
 }
 
 .modelConfigItem:hover {
@@ -502,8 +502,8 @@ h2 {
 }
 
 .modelConfigStatus.ready {
-  color: #176b46;
-  background: #e9f7ef;
+  color: #242424;
+  background: #ecece8;
 }
 
 .modelConfigStatus.missing {
@@ -621,7 +621,7 @@ h2 {
 }
 
 .skillRowSummary:hover .skillName {
-  color: #176b46;
+  color: #111;
 }
 
 .skillAvatar {
@@ -629,10 +629,10 @@ h2 {
   width: 42px;
   height: 42px;
   place-items: center;
-  border: 1px solid #d9e6df;
+  border: 1px solid #deded8;
   border-radius: 8px;
-  background: #eef8f2;
-  color: #176b46;
+  background: #f1f1ee;
+  color: #242424;
   font-weight: 800;
 }
 
@@ -705,13 +705,13 @@ h2 {
 }
 
 .skillStatus.enabled {
-  color: #176b46;
-  background: #e9f7ef;
+  color: #242424;
+  background: #ecece8;
 }
 
 .skillStatus.disabled {
-  color: #8a4d14;
-  background: #fff1d6;
+  color: #777;
+  background: #f1f1ed;
 }
 
 .skillId {
@@ -769,8 +769,8 @@ h2 {
 }
 
 .skillSwitch input:checked + .skillSwitchTrack {
-  border-color: #70bd93;
-  background: #2f8f63;
+  border-color: #111;
+  background: #111;
 }
 
 .skillSwitch input:checked + .skillSwitchTrack::after {
@@ -778,7 +778,7 @@ h2 {
 }
 
 .skillSwitch input:focus-visible + .skillSwitchTrack {
-  outline: 2px solid #b9dcca;
+  outline: 2px solid #d0d0ca;
   outline-offset: 2px;
 }
 
@@ -991,6 +991,10 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.message.multiModelMessage {
+  max-width: min(1220px, calc(100% - 24px));
+}
+
 .message.user {
   display: flex;
   justify-content: flex-end;
@@ -1099,13 +1103,13 @@ h2 {
 
 .messageContent a,
 .answerContent a {
-  color: #0f6d55;
+  color: #111;
 }
 
 .messageContent blockquote,
 .answerContent blockquote {
   margin: 12px 0;
-  border-left: 3px solid #b9dcca;
+  border-left: 3px solid #242424;
   background: rgb(255 255 255 / 54%);
   color: #424a53;
   padding: 8px 12px;
@@ -1247,6 +1251,156 @@ h2 {
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
 }
 
+.multiModelTip {
+  max-width: none;
+  margin: 0 0 12px;
+  border: 1px solid #deded8;
+  border-radius: 8px;
+  background: #f1f1ee;
+  color: #535353;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 10px 12px;
+}
+
+.multiModelGrid {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 2px 2px 10px;
+  scrollbar-gutter: stable;
+  scrollbar-color: #b9cfc3 transparent;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+}
+
+.multiModelGrid::-webkit-scrollbar {
+  height: 8px;
+}
+
+.multiModelGrid::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #b9cfc3;
+}
+
+.multiModelGrid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.multiModelGrid.count2 {
+  grid-template-columns: repeat(2, minmax(360px, 1fr));
+}
+
+.multiModelGrid.count3 {
+  grid-template-columns: repeat(3, minmax(340px, 1fr));
+}
+
+.multiModelCard {
+  contain: layout paint;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid #d8d8d2;
+  border-radius: 8px;
+  background: #fbfbf8;
+  padding: 14px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  scroll-snap-align: start;
+  transition: opacity 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.multiModelCard.selectable {
+  cursor: pointer;
+}
+
+.multiModelCard.selectable:hover {
+  border-color: #242424;
+  background: #fff;
+}
+
+.multiModelCard.canonical {
+  border-color: #111;
+  background: #eeeeea;
+  box-shadow: 0 0 0 1px rgb(17 17 17 / 12%), 0 8px 20px rgb(15 23 42 / 7%);
+  opacity: 1;
+}
+
+.multiModelCard.muted {
+  background: #f3f3ee;
+  opacity: 0.72;
+}
+
+.multiModelCard.failed {
+  border-color: #efc7c7;
+  background: #fff7f7;
+}
+
+.multiModelCardHeader {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e4e4de;
+}
+
+.multiModelCardHeader strong {
+  overflow: hidden;
+  color: #24272d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.multiModelStatus {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #fff;
+  color: #3f454d;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.multiModelCard .thinkingPanel,
+.multiModelCard .answerPanel {
+  max-width: none;
+  margin: 0;
+  min-width: 0;
+}
+
+.multiModelCard .answerPanel,
+.multiModelCard > .answerContent {
+  overflow: hidden;
+  border: 1px solid #d9d9d3;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.multiModelCard .answerContent {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.multiModelCard .answerContent pre,
+.multiModelCard .answerContent .tableScroller {
+  max-width: 100%;
+}
+
+.thinkingPanel.compact .traceBody {
+  max-height: 150px;
+  font-size: 11px;
+}
+
 .hidden {
   display: none;
 }
@@ -1276,6 +1430,7 @@ h2 {
 .composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 78px;
+  align-items: start;
   gap: 8px;
   width: min(780px, calc(100% - 32px));
   margin: 0 auto;
@@ -1293,6 +1448,8 @@ h2 {
 
 .composerInput {
   position: relative;
+  display: grid;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -1305,11 +1462,12 @@ textarea {
   border-radius: 18px;
   background: #fff;
   color: #1f2328;
-  padding: 15px 16px 48px;
+  padding: 15px 16px;
   box-shadow: 0 2px 10px rgb(0 0 0 / 5%);
 }
 
 .composer > button {
+  align-self: start;
   min-height: 54px;
   border: 0;
   border-radius: 18px;
@@ -1323,44 +1481,130 @@ textarea {
 }
 
 .composerControls {
-  position: absolute;
-  bottom: 9px;
-  left: 12px;
-  right: 12px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
+  padding: 0 2px;
+}
+
+.composerControlGroup {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  color: #65706b;
+  font-size: 11px;
+  font-weight: 750;
 }
 
 .modelSelector,
 .knowledgeSelector {
-  max-width: min(320px, calc(100% - 24px));
+  width: 170px;
+  max-width: 100%;
   min-height: 28px;
   border: 1px solid #d5d5cf;
   border-radius: 999px;
   background: #f7f7f4;
   color: #354037;
-  padding: 0 30px 0 10px;
+  padding: 0 28px 0 10px;
   font-size: 11px;
   font-weight: 700;
 }
 
+.modelModeHint {
+  overflow: hidden;
+  color: #6f766f;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  padding: 0 2px;
+}
+
 .knowledgeSelector {
-  max-width: min(260px, 48%);
+  width: 190px;
 }
 
 .modelSelector:focus,
-.knowledgeSelector:focus {
-  outline: 2px solid #b9dcca;
+.knowledgeSelector:focus,
+.multiModelToggle:focus {
+  outline: 2px solid #d0d0ca;
   outline-offset: 1px;
 }
 
 .modelSelector:not(:disabled):hover,
-.knowledgeSelector:not(:disabled):hover {
-  border-color: #9ed3b8;
-  background: #e9f7ef;
-  color: #176b46;
+.knowledgeSelector:not(:disabled):hover,
+.multiModelToggle:not(:disabled):hover {
+  border-color: #242424;
+  background: #fff;
+  color: #111;
+}
+
+.multiModelPicker {
+  position: relative;
+}
+
+.multiModelToggle {
+  min-height: 28px;
+  border: 1px solid #d5d5cf;
+  border-radius: 999px;
+  background: #f7f7f4;
+  color: #354037;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.multiModelToggle.active {
+  border-color: #242424;
+  background: #fff;
+  color: #111;
+}
+
+.multiModelPopover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 8;
+  display: grid;
+  gap: 6px;
+  width: min(320px, 86vw);
+  border: 1px solid #d5d5cf;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 14%);
+}
+
+.multiModelPopover.hidden {
+  display: none;
+}
+
+.multiModelPopoverTitle,
+.multiModelEmpty {
+  color: #687169;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.multiModelOption {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  border-radius: 7px;
+  color: #25282d;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.multiModelOption:hover {
+  background: #f4f4f0;
+}
+
+.multiModelOption input {
+  flex: 0 0 auto;
 }
 
 .slashMenu {
@@ -1403,17 +1647,1533 @@ textarea {
 
 .slashItem:hover,
 .slashItem.active {
-  background: #e8f5ee;
-  border-left-color: #2f8f63;
+  background: #ededeb;
+  border-left-color: #111;
 }
 
 .composer .slashItem:hover,
 .composer .slashItem.active {
-  background: #e8f5ee;
+  background: #ededeb;
 }
 
 .slashName {
   color: #1d3028;
+}
+
+/* Monochrome polish layer */
+:root {
+  --ink-950: #0d0d0d;
+  --ink-900: #151515;
+  --ink-800: #222;
+  --ink-700: #343434;
+  --ink-600: #535353;
+  --ink-500: #737373;
+  --ink-300: #c9c9c3;
+  --ink-200: #deded8;
+  --ink-150: #e9e9e4;
+  --ink-100: #f3f3ef;
+  --ink-050: #fafaf8;
+  --surface: #fff;
+  --surface-raised: #fffffd;
+  --line-soft: rgb(18 18 18 / 8%);
+  --line: rgb(18 18 18 / 13%);
+  --line-strong: rgb(18 18 18 / 22%);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 5%), 0 10px 30px rgb(0 0 0 / 6%);
+  --shadow-card: 0 1px 1px rgb(0 0 0 / 4%), 0 12px 28px rgb(0 0 0 / 7%);
+  --shadow-deep: 0 18px 50px rgb(0 0 0 / 18%);
+  --focus-ring: 0 0 0 3px rgb(20 20 20 / 12%);
+  --danger: #9f2f2f;
+  --danger-bg: #fff7f7;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+}
+
+html {
+  scrollbar-color: #b7b7b1 transparent;
+  scrollbar-width: thin;
+}
+
+body {
+  letter-spacing: 0;
+  color: var(--ink-900);
+  color-scheme: light;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 78%) 0, rgb(255 255 255 / 0%) 280px),
+    repeating-linear-gradient(90deg, rgb(0 0 0 / 0%) 0 31px, rgb(0 0 0 / 2.5%) 31px 32px),
+    repeating-linear-gradient(180deg, rgb(0 0 0 / 0%) 0 31px, rgb(0 0 0 / 1.8%) 31px 32px),
+    var(--ink-100);
+}
+
+body::selection {
+  background: #222;
+  color: #fff;
+}
+
+button,
+textarea,
+input,
+select {
+  letter-spacing: 0;
+}
+
+button,
+.conversationItem,
+.skillListItem,
+.knowledgeBaseItem,
+.knowledgeItem,
+.modelConfigItem,
+.modelConfigEditor,
+.multiModelCard,
+.answerPanel,
+.slashMenu,
+.multiModelPopover {
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease;
+}
+
+button:focus-visible,
+textarea:focus,
+input:focus,
+select:focus,
+summary:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus-ring);
+}
+
+.shell {
+  background: transparent;
+}
+
+.sidebar {
+  position: relative;
+  overflow: hidden;
+  border-right: 1px solid rgb(255 255 255 / 8%);
+  background:
+    linear-gradient(180deg, #191919 0%, #101010 56%, #090909 100%);
+  box-shadow: 10px 0 34px rgb(0 0 0 / 12%);
+}
+
+.sidebar::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 7%), transparent 18%, transparent 82%, rgb(255 255 255 / 4%)),
+    repeating-linear-gradient(180deg, rgb(255 255 255 / 3%) 0 1px, transparent 1px 18px);
+  content: "";
+  opacity: 0.35;
+}
+
+.sidebar::after {
+  position: absolute;
+  right: -1px;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, transparent, rgb(255 255 255 / 44%), transparent);
+  content: "";
+  animation: sidebarScan 5.5s ease-in-out infinite;
+}
+
+.sidebarHeader,
+.sidebarPanel {
+  position: relative;
+  z-index: 1;
+}
+
+.sidebarHeader {
+  gap: 10px;
+  padding: 16px 14px 12px;
+}
+
+h1 {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  color: #f7f7f7;
+  font-size: 14px;
+  font-weight: 760;
+}
+
+h1::before {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgb(255 255 255 / 68%);
+  border-radius: 999px;
+  background: #f4f4f4;
+  box-shadow: 0 0 18px rgb(255 255 255 / 48%);
+  content: "";
+}
+
+h2 {
+  color: var(--ink-900);
+  font-weight: 720;
+}
+
+.newChatButton,
+.sidebarNavButton {
+  position: relative;
+  overflow: hidden;
+  border-color: rgb(255 255 255 / 9%);
+  background: rgb(255 255 255 / 5%);
+  color: #efefef;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 7%);
+}
+
+.newChatButton {
+  min-height: 50px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 12%), rgb(255 255 255 / 5%)),
+    #181818;
+}
+
+.newChatButton::after,
+.sidebarNavButton::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 0%, rgb(255 255 255 / 14%) 44%, transparent 78%);
+  content: "";
+  opacity: 0;
+  transform: translateX(-120%);
+}
+
+.newChatButton:hover,
+.sidebarNavButton:hover,
+.sidebarNavButton.active {
+  border-color: rgb(255 255 255 / 16%);
+  background: rgb(255 255 255 / 10%);
+  transform: translateY(-1px);
+}
+
+.newChatButton:hover::after,
+.sidebarNavButton:hover::after,
+.sidebarNavButton.active::after {
+  opacity: 1;
+  animation: buttonSweep 0.78s ease;
+}
+
+.sidebarNavButton.active {
+  color: #fff;
+  box-shadow: inset 3px 0 0 #f2f2f2, inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.conversationList {
+  gap: 4px;
+}
+
+.conversationItem {
+  border: 1px solid transparent;
+}
+
+.conversationItem:hover,
+.conversationItem.active {
+  border-color: rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 7%);
+}
+
+.conversationItem.active {
+  box-shadow: inset 3px 0 0 #e9e9e9;
+}
+
+.conversationButton {
+  color: #ececec;
+}
+
+.conversationMeta {
+  color: #8f8f8f;
+}
+
+.conversationDeleteButton:hover {
+  background: rgb(255 255 255 / 10%);
+  color: #fff;
+}
+
+.chatPane {
+  background: transparent;
+}
+
+.chatHeader {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  border-bottom: 1px solid var(--line-soft);
+  background: rgb(247 247 245 / 82%);
+  backdrop-filter: blur(18px);
+}
+
+.eyebrow {
+  color: var(--ink-500);
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.messages {
+  scrollbar-color: #b7b7b1 transparent;
+}
+
+.emptyState {
+  animation: elementIn 0.24s ease both;
+}
+
+.emptyTitle {
+  color: var(--ink-950);
+  font-weight: 760;
+}
+
+.emptyHint {
+  color: var(--ink-600);
+}
+
+.message {
+  animation: elementIn 0.22s ease both;
+}
+
+.message.user .messageContent {
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: linear-gradient(180deg, #222, #141414);
+  color: #f7f7f7;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 11%);
+}
+
+.message.assistant .messageContent {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgb(255 255 255 / 68%);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-soft);
+}
+
+.messageContent pre,
+.answerContent pre,
+.skillInstructions {
+  border: 1px solid rgb(255 255 255 / 10%);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 0%)),
+    #111;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.messageContent code,
+.answerContent code {
+  border: 1px solid var(--line-soft);
+  background: #efefeb;
+}
+
+.messageContent pre code,
+.answerContent pre code {
+  border: 0;
+  background: transparent;
+}
+
+.messageContent a,
+.answerContent a {
+  color: #111;
+  font-weight: 700;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.messageContent blockquote,
+.answerContent blockquote {
+  border-left-color: #222;
+  background: rgb(255 255 255 / 64%);
+}
+
+.thinkingPanel {
+  color: var(--ink-600);
+}
+
+.panelHeader {
+  position: relative;
+  width: fit-content;
+  border-radius: 999px;
+  color: var(--ink-500);
+  padding: 0 8px 0 0;
+}
+
+.message.streaming .panelHeader::after {
+  display: block;
+  width: 40px;
+  height: 1px;
+  margin-left: 2px;
+  background: linear-gradient(90deg, transparent, #111, transparent);
+  content: "";
+  animation: railScan 1.25s ease-in-out infinite;
+}
+
+.traceBody {
+  color: var(--ink-600);
+}
+
+.answerPanel {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 88%), rgb(246 246 242 / 96%));
+  box-shadow: var(--shadow-card);
+}
+
+.answerPanel::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, #111, #777, #111);
+  content: "";
+  opacity: 0.8;
+}
+
+.answerPanel .answerContent {
+  position: relative;
+}
+
+.skillShell,
+.knowledgeShell,
+.modelShell {
+  width: min(1060px, 100%);
+}
+
+.skillToolbar,
+.knowledgeToolbar,
+.modelToolbar {
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 14px;
+}
+
+.skillSearchInput,
+.modelField input,
+.modelField select,
+textarea,
+.modelSelector,
+.knowledgeSelector {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 78%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 75%);
+}
+
+.skillSearchInput:focus,
+textarea:focus,
+.modelField input:focus,
+.modelField select:focus,
+.modelSelector:focus,
+.knowledgeSelector:focus,
+.multiModelToggle:focus {
+  border-color: var(--line-strong);
+  background: #fff;
+}
+
+.skillListItem,
+.knowledgeBaseItem,
+.knowledgeItem,
+.modelConfigItem,
+.modelConfigEditor {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(250 250 247 / 96%));
+  box-shadow: 0 1px 1px rgb(0 0 0 / 3%);
+  animation: elementIn 0.24s ease both;
+}
+
+.skillListItem:hover,
+.knowledgeBaseItem:hover,
+.knowledgeItem:hover,
+.modelConfigItem:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+  transform: translateY(-1px);
+}
+
+.knowledgeBaseItem.active,
+.modelConfigItem.active {
+  border-color: #1c1c1c;
+  background:
+    linear-gradient(180deg, #fff, #f1f1ee);
+  box-shadow: inset 3px 0 0 #111, var(--shadow-soft);
+}
+
+.knowledgeToolbar h3,
+.modelToolbar h3 {
+  color: var(--ink-950);
+  font-size: 21px;
+  font-weight: 780;
+}
+
+.knowledgeToolbar p,
+.modelToolbar p {
+  color: var(--ink-500);
+}
+
+.knowledgeBaseAddButton,
+.knowledgeAddButton,
+.modelAddButton,
+.composer > button {
+  border: 1px solid #111;
+  background: linear-gradient(180deg, #242424, #0f0f0f);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 14%), inset 0 1px 0 rgb(255 255 255 / 12%);
+}
+
+.knowledgeBaseAddButton:hover,
+.knowledgeAddButton:hover,
+.modelAddButton:hover,
+.composer > button:hover {
+  background: linear-gradient(180deg, #343434, #141414);
+  transform: translateY(-1px);
+}
+
+.knowledgeBaseAddButton {
+  background: linear-gradient(180deg, #242424, #0f0f0f);
+}
+
+.knowledgeBaseAddButton:hover {
+  background: linear-gradient(180deg, #343434, #141414);
+}
+
+.knowledgeIcon,
+.skillAvatar {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, #f4f4f0, #e7e7e2);
+  color: #191919;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 85%);
+}
+
+.skillRowSummary:hover .skillName {
+  color: #111;
+}
+
+.skillStatus.enabled,
+.modelConfigStatus.ready {
+  background: #ecece8;
+  color: #171717;
+}
+
+.skillStatus.disabled,
+.modelConfigStatus.missing {
+  background: #f1f1ed;
+  color: #777;
+}
+
+.skillTrigger {
+  border-color: var(--line);
+  background: #f4f4f0;
+  color: var(--ink-600);
+}
+
+.skillSwitchTrack {
+  border-color: var(--line);
+  background: #d8d8d2;
+}
+
+.skillSwitch input:checked + .skillSwitchTrack {
+  border-color: #111;
+  background: #111;
+}
+
+.skillSwitch input:focus-visible + .skillSwitchTrack {
+  outline: 0;
+  box-shadow: var(--focus-ring);
+}
+
+.skillDeleteButton:hover,
+.knowledgeDeleteButton:hover,
+.knowledgeBaseDeleteButton:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.skillMetadataItem,
+.modelConfigDetailItem {
+  border-color: var(--line-soft);
+  background: rgb(255 255 255 / 72%);
+}
+
+.modelConfigActions button,
+.modelEditorActions button,
+.skillRowActions button:not(.skillDeleteButton) {
+  border-color: var(--line);
+  background: #fff;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 4%);
+}
+
+.modelConfigActions button:hover,
+.modelEditorActions button:hover,
+.skillRowActions button:not(.skillDeleteButton):hover {
+  border-color: var(--line-strong);
+  background: #f4f4f0;
+  transform: translateY(-1px);
+}
+
+.knowledgeEmpty,
+.modelEmpty {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 66%), rgb(247 247 243 / 82%));
+}
+
+.multiModelTip {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 84%), rgb(241 241 237 / 92%));
+  color: var(--ink-600);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 3%);
+}
+
+.multiModelCard {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 94%), rgb(248 248 245 / 98%));
+}
+
+.multiModelCard.selectable:hover {
+  border-color: #1a1a1a;
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.multiModelCard.canonical {
+  border-color: #111;
+  background:
+    linear-gradient(180deg, #fff, #eeeeea);
+  box-shadow: inset 3px 0 0 #111, var(--shadow-card);
+}
+
+.multiModelCard.muted {
+  background: #f2f2ee;
+  opacity: 0.66;
+}
+
+.multiModelCard.streaming {
+  position: relative;
+}
+
+.multiModelCard.streaming::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 0%, rgb(255 255 255 / 58%) 46%, transparent 72%);
+  content: "";
+  transform: translateX(-120%);
+  animation: cardSweep 2.2s ease-in-out infinite;
+}
+
+.multiModelCardHeader {
+  border-bottom-color: var(--line-soft);
+}
+
+.multiModelStatus {
+  border: 1px solid var(--line-soft);
+  background: #fff;
+}
+
+.multiModelGrid {
+  scrollbar-color: #b9b9b3 transparent;
+}
+
+.multiModelGrid::-webkit-scrollbar-thumb {
+  background: #b9b9b3;
+}
+
+.modelSelector:not(:disabled):hover,
+.knowledgeSelector:not(:disabled):hover,
+.multiModelToggle:not(:disabled):hover,
+.multiModelToggle.active {
+  border-color: #1f1f1f;
+  background: #fff;
+  color: #111;
+}
+
+.multiModelToggle {
+  border-color: var(--line);
+  background: #f7f7f4;
+}
+
+.multiModelPopover,
+.slashMenu {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 94%);
+  box-shadow: var(--shadow-deep);
+  backdrop-filter: blur(18px);
+}
+
+.multiModelOption:hover,
+.slashItem:hover,
+.slashItem.active,
+.composer .slashItem:hover,
+.composer .slashItem.active {
+  border-left-color: #111;
+  background: #ededeb;
+}
+
+.slashName {
+  color: #111;
+}
+
+.loadingDots {
+  filter: grayscale(1);
+}
+
+/* Focused refinements */
+.sidebarHeader {
+  gap: 9px;
+  padding-top: 18px;
+}
+
+.sidebarHeader h1 {
+  margin-bottom: 9px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid rgb(255 255 255 / 6%);
+}
+
+.newChatButton,
+.sidebarNavButton {
+  border-color: rgb(255 255 255 / 5%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+}
+
+.newChatButton {
+  margin-top: 2px;
+}
+
+.newChatButton:hover,
+.sidebarNavButton:hover,
+.sidebarNavButton.active {
+  border-color: rgb(255 255 255 / 9%);
+}
+
+.sidebarNavButton.active {
+  box-shadow: inset 2px 0 0 #ededed, inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.conversationButton {
+  padding: 9px 10px;
+}
+
+.conversationTitle {
+  font-size: 14.5px;
+  font-weight: 660;
+}
+
+.message.user {
+  max-width: min(980px, calc(100% - 40px));
+  margin-right: max(20px, calc((100% - 980px) / 2));
+  margin-left: auto;
+}
+
+.message.user .messageContent {
+  max-width: min(620px, 100%);
+}
+
+.message.assistant {
+  margin-left: max(20px, calc((100% - 760px) / 2));
+}
+
+.multiModelTip {
+  border: 0;
+  background: rgb(255 255 255 / 42%);
+  box-shadow: none;
+  color: var(--ink-500);
+  padding: 8px 2px;
+}
+
+.composer {
+  grid-template-columns: minmax(0, 1fr) 82px;
+  gap: 10px;
+  width: min(820px, calc(100% - 32px));
+  padding-bottom: 18px;
+}
+
+.emptyChat .composer {
+  width: min(760px, calc(100% - 72px));
+}
+
+textarea {
+  height: 52px;
+  min-height: 52px;
+  max-height: 146px;
+  border-radius: 15px;
+  padding: 12px 15px;
+  line-height: 1.45;
+}
+
+.composer > button {
+  width: 82px;
+  min-height: 52px;
+  border-radius: 15px;
+  padding: 0;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.composerControls {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) minmax(180px, auto);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.composerControlGroup {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3px;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background:
+    linear-gradient(180deg, #fff, #f7f7f4);
+  padding: 7px 12px 8px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 90%), 0 1px 2px rgb(0 0 0 / 3%);
+}
+
+.composerControlGroup > span {
+  color: var(--ink-500);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.modelSelector,
+.knowledgeSelector {
+  appearance: none;
+  color-scheme: light;
+  width: 100%;
+  min-height: 23px;
+  border: 0;
+  border-radius: 0;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 12 12' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' fill='none' stroke='%23222222' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 12px 12px;
+  color: var(--ink-950);
+  padding: 0 24px 0 8px;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.modelSelector:focus,
+.knowledgeSelector:focus {
+  background-color: #fff;
+  box-shadow: none;
+}
+
+.multiModelPicker {
+  min-width: 0;
+}
+
+.multiModelToggle {
+  display: flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  border-color: var(--line);
+  border-radius: 13px;
+  background:
+    linear-gradient(180deg, #fff, #f7f7f4);
+  color: var(--ink-950);
+  padding: 0 14px;
+  text-align: left;
+  white-space: normal;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 90%), 0 1px 2px rgb(0 0 0 / 3%);
+}
+
+.multiModelToggle::after {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  margin-left: 8px;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 12 12' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' fill='none' stroke='%23222222' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  content: "";
+}
+
+.multiModelToggle.active {
+  background:
+    linear-gradient(180deg, #fff, #eeeeea);
+  box-shadow: inset 2px 0 0 #111, 0 1px 1px rgb(0 0 0 / 3%);
+}
+
+.modelModeHint {
+  overflow: visible;
+  color: var(--ink-500);
+  text-overflow: clip;
+  white-space: normal;
+  line-height: 1.45;
+}
+
+.actionMenu {
+  position: relative;
+  justify-self: end;
+}
+
+.actionMenuButton {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-500);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+
+.actionMenuButton:hover,
+.actionMenu:focus-within .actionMenuButton {
+  background: #eeeeea;
+  color: #111;
+}
+
+.actionMenuPopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  display: none;
+  min-width: 112px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 96%);
+  padding: 6px;
+  box-shadow: var(--shadow-deep);
+  backdrop-filter: blur(14px);
+}
+
+.actionMenu:hover .actionMenuPopover,
+.actionMenu:focus-within .actionMenuPopover {
+  display: grid;
+}
+
+.actionMenuItem {
+  min-height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-800);
+  padding: 0 10px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.actionMenuItem:hover {
+  background: #f1f1ee;
+}
+
+.actionMenuItem.danger {
+  color: var(--danger);
+}
+
+.modalOpen {
+  overflow: hidden;
+}
+
+.modalRoot {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.modalRoot.hidden {
+  display: none;
+}
+
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 42%);
+  backdrop-filter: blur(8px);
+}
+
+.modalDialog {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 16px;
+  width: min(480px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid rgb(255 255 255 / 64%);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 98%), rgb(245 245 241 / 98%));
+  padding: 18px;
+  box-shadow: var(--shadow-deep), inset 0 1px 0 rgb(255 255 255 / 88%);
+  animation: modalIn 0.18s ease both;
+}
+
+.modalRoot.wide .modalDialog {
+  width: min(820px, 100%);
+}
+
+.modalHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.modalHeader h3 {
+  margin: 0;
+  color: var(--ink-950);
+  font-size: 18px;
+  font-weight: 780;
+}
+
+.modalHeader p {
+  margin: 0;
+  color: var(--ink-600);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.modalContent {
+  min-width: 0;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 14px;
+}
+
+.modalAction {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink-800);
+  padding: 0 14px;
+  font-weight: 740;
+}
+
+.modalAction:hover {
+  border-color: var(--line-strong);
+  background: #f2f2ee;
+}
+
+.modalAction.primary {
+  border-color: #111;
+  background: linear-gradient(180deg, #252525, #111);
+  color: #fff;
+}
+
+.modalAction.danger {
+  border-color: #7a1f1f;
+  background: linear-gradient(180deg, #a83939, #862626);
+  color: #fff;
+}
+
+.modalField {
+  display: grid;
+  gap: 7px;
+}
+
+.modalField span {
+  color: var(--ink-600);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.modalField input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink-950);
+  padding: 0 12px;
+}
+
+.modalFieldError {
+  min-height: 16px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.modalDialog .modelConfigEditor {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.modalDialog .modelEditorActions {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 12px;
+}
+
+.modalDialog .modelConfigDetail,
+.modalDialog .skillMetadataGrid {
+  gap: 10px;
+}
+
+.modalDialog .modelConfigDetailItem,
+.modalDialog .skillMetadataItem {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(18 18 18 / 10%);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(246 246 242 / 96%));
+  padding: 11px 12px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 88%), 0 1px 2px rgb(0 0 0 / 3%);
+}
+
+.modalDialog .modelConfigDetailItem::before,
+.modalDialog .skillMetadataItem::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: #1a1a1a;
+  content: "";
+  opacity: 0.72;
+}
+
+.modalDialog .modelConfigDetailItem span,
+.modalDialog .skillMetadataItem span,
+.modalField span,
+.modelField span {
+  color: #696969;
+  font-size: 10.5px;
+  font-weight: 820;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.modalDialog .modelConfigDetailItem strong,
+.modalDialog .skillMetadataItem strong {
+  color: #151515;
+  font-size: 12.5px;
+  font-weight: 720;
+  line-height: 1.45;
+}
+
+.modalDialog .modelField {
+  gap: 7px;
+}
+
+.modalDialog .modelField input,
+.modalDialog .modelField select,
+.modalField input {
+  min-height: 42px;
+  border: 1px solid rgb(18 18 18 / 12%);
+  border-radius: 11px;
+  background:
+    linear-gradient(180deg, #fff, #fbfbf8);
+  color: #111;
+  padding: 0 12px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 90%), 0 1px 2px rgb(0 0 0 / 3%);
+}
+
+.modalDialog .modelField input:focus,
+.modalDialog .modelField select:focus,
+.modalField input:focus {
+  border-color: rgb(18 18 18 / 28%);
+  background: #fff;
+  box-shadow: var(--focus-ring), inset 0 1px 0 rgb(255 255 255 / 90%);
+}
+
+.sourceCapable {
+  position: relative;
+  padding-top: 38px;
+}
+
+.message.assistant .answerPanel .messageContent {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.answerSourceButton {
+  position: absolute;
+  top: 9px;
+  left: 11px;
+  z-index: 2;
+  min-width: 34px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 84%);
+  color: var(--ink-700);
+  padding: 0 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.answerSourceButton:hover {
+  border-color: var(--line-strong);
+  background: #fff;
+  color: #111;
+  transform: translateY(-1px);
+}
+
+.sourcePreview {
+  max-height: min(560px, 66vh);
+  overflow: auto;
+  margin: 0;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 10px;
+  background: #111;
+  color: #f7f7f7;
+  padding: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.modalDialog .skillDetailPanel,
+.modalDialog .modelConfigDetail {
+  max-height: min(560px, 66vh);
+  overflow: auto;
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes elementIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sidebarScan {
+  0%,
+  100% {
+    transform: translateY(-35%);
+    opacity: 0.15;
+  }
+  50% {
+    transform: translateY(35%);
+    opacity: 0.9;
+  }
+}
+
+@keyframes buttonSweep {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes cardSweep {
+  0%,
+  42% {
+    opacity: 0;
+    transform: translateX(-120%);
+  }
+  58% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(120%);
+  }
+}
+
+@keyframes railScan {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateX(-5px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Conversation interaction refinements */
+body {
+  background: #f7f7f5;
+}
+
+.shell {
+  transition: grid-template-columns 0.2s ease;
+}
+
+.shell.sidebarCollapsed {
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+
+.sidebarToggle {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  z-index: 3;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 6%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 4%);
+  color: #f2f2f2;
+  padding: 0;
+}
+
+.sidebarToggle::before,
+.sidebarToggle::after {
+  display: block;
+  width: 13px;
+  height: 1px;
+  background: currentColor;
+  content: "";
+}
+
+.sidebarToggle::before {
+  transform: translateY(3px) rotate(0deg);
+}
+
+.sidebarToggle::after {
+  transform: translateY(-3px) rotate(0deg);
+}
+
+.sidebarToggle:hover {
+  border-color: rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 8%);
+}
+
+.shell.sidebarCollapsed .sidebarHeader,
+.shell.sidebarCollapsed .sidebarPanel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.shell.sidebarCollapsed .sidebarToggle {
+  right: 11px;
+}
+
+.sidebarToggleTip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 10px);
+  z-index: 5;
+  display: block;
+  width: max-content;
+  max-width: 140px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 8px;
+  background: rgb(18 18 18 / 94%);
+  color: #f5f5f5;
+  padding: 6px 8px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 22%);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(4px, -50%);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.sidebarToggle:hover .sidebarToggleTip,
+.sidebarToggle:focus-visible .sidebarToggleTip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.shell.sidebarCollapsed .sidebarToggle::before {
+  transform: translateY(0) rotate(90deg);
+}
+
+.shell.sidebarCollapsed .sidebarToggle::after {
+  transform: translateY(0);
+}
+
+.skillListItem,
+.modelConfigItem {
+  cursor: pointer;
+}
+
+.skillRowActions,
+.modelConfigActions {
+  cursor: default;
+}
+
+.chatPane,
+.chatHeader,
+.messages {
+  background: #f7f7f5;
+}
+
+.message.user {
+  max-width: min(860px, calc(100% - 56px));
+  margin-right: 32px;
+  margin-left: auto;
+  text-align: right;
+}
+
+.message.user .messageContent {
+  text-align: left;
+}
+
+.message.assistant:not(.multiModelMessage) {
+  max-width: min(820px, calc(100% - 96px));
+  margin-right: auto;
+  margin-left: 32px;
+}
+
+.message.multiModelMessage {
+  max-width: min(1220px, calc(100% - 96px));
+  margin-right: auto;
+  margin-left: 32px;
+}
+
+.shell.sidebarCollapsed .message.assistant:not(.multiModelMessage) {
+  max-width: min(1040px, calc(100% - 130px));
+}
+
+.shell.sidebarCollapsed .message.multiModelMessage {
+  max-width: min(1380px, calc(100% - 130px));
+}
+
+.shell.sidebarCollapsed .message.user {
+  max-width: min(1080px, calc(100% - 96px));
+}
+
+.message.assistant > .thinkingPanel,
+.message.assistant > .answerPanel {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.message.assistant > .answerPanel {
+  max-width: none;
+}
+
+.sourceCapable {
+  overflow: visible;
+  margin-top: 26px;
+  padding-top: 0;
+}
+
+.answerSourceButton {
+  display: inline-grid;
+  top: -25px;
+  left: 0;
+  min-width: 32px;
+  height: 22px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #111;
+  padding: 0;
+  font-size: 12px;
+  opacity: 0.78;
+}
+
+.answerSourceButton:hover {
+  border-color: transparent;
+  background: transparent;
+  color: #111;
+  box-shadow: none;
+  opacity: 1;
+}
+
+.multiModelCard {
+  overflow: visible;
+}
+
+.sourcePreviewMarkdown {
+  max-height: min(560px, 66vh);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px;
+}
+
+.messageLocator {
+  position: fixed;
+  top: 86px;
+  right: 14px;
+  z-index: 6;
+  display: grid;
+  gap: 6px;
+  max-width: 150px;
+  max-height: calc(100vh - 170px);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 70%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 7%);
+  backdrop-filter: blur(12px);
+}
+
+.messageLocator.hidden {
+  display: none;
+}
+
+.messageLocatorItem {
+  overflow: hidden;
+  min-height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-600);
+  padding: 0 8px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.messageLocatorItem.user {
+  color: var(--ink-900);
+}
+
+.messageLocatorItem:hover {
+  background: #ecece8;
+  color: #111;
 }
 
 @media (max-width: 820px) {
@@ -1421,8 +3181,16 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .shell.sidebarCollapsed {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar {
     min-height: 300px;
+  }
+
+  .shell.sidebarCollapsed .sidebar {
+    min-height: 52px;
   }
 
   .chatHeader {
@@ -1437,9 +3205,63 @@ textarea {
     padding: 20px 12px;
   }
 
+  .multiModelGrid.count2 {
+    grid-template-columns: repeat(2, minmax(300px, 86vw));
+  }
+
+  .multiModelGrid.count3 {
+    grid-template-columns: repeat(3, minmax(300px, 86vw));
+  }
+
   .composer {
     grid-template-columns: 1fr;
     width: calc(100% - 24px);
+  }
+
+  .composer > button {
+    width: 100%;
+  }
+
+  .message.user,
+  .message.assistant {
+    max-width: calc(100% - 24px);
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  .messageLocator {
+    right: 8px;
+    max-width: 120px;
+  }
+
+  .composerControls {
+    grid-template-columns: 1fr;
+    padding: 0;
+  }
+
+  .composerControlGroup {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .modelSelector,
+  .knowledgeSelector {
+    max-width: none;
+    width: 100%;
+  }
+
+  .modelModeHint {
+    white-space: normal;
+  }
+
+  .multiModelPicker,
+  .multiModelToggle {
+    width: 100%;
+  }
+
+  .multiModelPopover {
+    right: 0;
+    width: 100%;
   }
 
   .emptyChat .composer {
