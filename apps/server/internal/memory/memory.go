@@ -169,7 +169,7 @@ func (s *InMemoryStore) GetShortMemory(conversationID string) contracts.ShortMem
 	memory := contracts.ShortMemory{
 		ID:             shared.NewID("mem"),
 		ConversationID: conversationID,
-		Summary:        "No prior short-term memory.",
+		Summary:        "没有历史短期记忆。",
 		RecentFacts:    []string{},
 		UpdatedAt:      shared.Now(),
 	}
@@ -185,16 +185,16 @@ func (s *InMemoryStore) UpdateShortMemory(conversationID string, userMessage str
 		previous = contracts.ShortMemory{
 			ID:             shared.NewID("mem"),
 			ConversationID: conversationID,
-			Summary:        "No prior short-term memory.",
+			Summary:        "没有历史短期记忆。",
 			RecentFacts:    []string{},
 		}
 	}
 	facts := append([]string{}, previous.RecentFacts...)
-	facts = append(facts, "User asked: "+shared.TrimRunes(userMessage, 160))
-	facts = append(facts, "Assistant answered: "+shared.TrimRunes(assistantAnswer, 180))
+	facts = append(facts, "用户提问："+shared.TrimRunes(userMessage, 160))
+	facts = append(facts, "助手回答："+shared.TrimRunes(assistantAnswer, 180))
 	for _, result := range toolResults {
 		if result.OK {
-			facts = append(facts, fmt.Sprintf("Tool %s returned %s.", result.ToolID, shared.CompactJSON(result.Output, 180)))
+			facts = append(facts, fmt.Sprintf("工具 %s 返回：%s。", result.ToolID, shared.CompactJSON(result.Output, 180)))
 		}
 	}
 	if len(facts) > 8 {
@@ -202,10 +202,10 @@ func (s *InMemoryStore) UpdateShortMemory(conversationID string, userMessage str
 	}
 
 	summaryParts := []string{}
-	if previous.Summary != "" && previous.Summary != "No prior short-term memory." {
+	if previous.Summary != "" && previous.Summary != "没有历史短期记忆。" && previous.Summary != "No prior short-term memory." {
 		summaryParts = append(summaryParts, previous.Summary)
 	}
-	summaryParts = append(summaryParts, fmt.Sprintf("Latest turn: user asked %q; assistant replied %q.", shared.TrimRunes(userMessage, 120), shared.TrimRunes(assistantAnswer, 140)))
+	summaryParts = append(summaryParts, fmt.Sprintf("最新一轮：用户问 %q；助手回答 %q。", shared.TrimRunes(userMessage, 120), shared.TrimRunes(assistantAnswer, 140)))
 	activeTask := previous.ActiveTask
 	if startsTask(userMessage) {
 		activeTask = shared.TrimRunes(userMessage, 180)

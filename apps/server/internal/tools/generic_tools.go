@@ -25,7 +25,7 @@ func (EchoTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:echo",
 		Source:      "tool",
 		Name:        "echo",
-		Description: "Echo input back through the generic tool runtime.",
+		Description: "通过通用工具运行时回显输入内容。",
 		InputSchema: runtime.Schema(map[string]any{
 			"text": map[string]any{"type": "string"},
 		}, []string{"text"}),
@@ -54,7 +54,7 @@ func (MemorySnapshotTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:memory_snapshot",
 		Source:      "tool",
 		Name:        "memory_snapshot",
-		Description: "Return the current conversation short memory and recent messages.",
+		Description: "返回当前会话的短期记忆和近期消息。",
 		InputSchema: runtime.Schema(map[string]any{}, []string{}),
 		Risk:        contracts.RiskLow,
 	}

@@ -48,13 +48,13 @@ func (AskUserQuestionTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:AskUserQuestion",
 		Source:      "tool",
 		Name:        "AskUserQuestion",
-		Description: "Ask the user a concise clarifying question when the task cannot proceed safely or correctly without more information. Returns a structured waiting-for-user result for the final answer to surface.",
+		Description: "当缺少信息会导致任务无法安全或正确推进时，向用户提出一个简洁的澄清问题。返回结构化的等待用户结果，供最终回答展示。",
 		InputSchema: runtime.Schema(map[string]any{
-			"question": map[string]any{"type": "string", "description": "The exact question to ask the user"},
-			"context":  map[string]any{"type": "string", "description": "Short reason this question is needed"},
+			"question": map[string]any{"type": "string", "description": "要询问用户的准确问题"},
+			"context":  map[string]any{"type": "string", "description": "需要这个问题的简短原因"},
 			"choices": map[string]any{
 				"type":        "array",
-				"description": "Optional short answer choices",
+				"description": "可选的简短答案选项",
 				"items":       map[string]any{"type": "string"},
 			},
 		}, []string{"question"}),
@@ -74,7 +74,7 @@ func (AskUserQuestionTool) Invoke(ctx context.Context, input map[string]any, inv
 		"question":    question,
 		"context":     strings.TrimSpace(contextText),
 		"choices":     stringSliceFromInput(input["choices"], 8),
-		"instruction": "Surface this question to the user in the final answer and wait for the next user message.",
+		"instruction": "请在最终回答中向用户展示这个问题，并等待用户下一条消息。",
 	}, nil
 }
 
@@ -91,11 +91,11 @@ func (WebFetchTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:WebFetch",
 		Source:      "tool",
 		Name:        "WebFetch",
-		Description: "Fetch a public HTTP/HTTPS URL and return readable text content, title, final URL, status, and content type. Private network and localhost addresses are blocked.",
+		Description: "抓取公开 HTTP/HTTPS URL，并返回可读文本、标题、最终 URL、状态码和内容类型。会阻止私有网络和 localhost 地址。",
 		InputSchema: runtime.Schema(map[string]any{
-			"url":       map[string]any{"type": "string", "description": "Public HTTP/HTTPS URL to fetch"},
-			"prompt":    map[string]any{"type": "string", "description": "Optional extraction instruction for the model to apply to returned content"},
-			"max_chars": map[string]any{"type": "integer", "description": "Maximum characters of readable text to return. Default 6000, max 20000."},
+			"url":       map[string]any{"type": "string", "description": "要抓取的公开 HTTP/HTTPS URL"},
+			"prompt":    map[string]any{"type": "string", "description": "可选的提取指令，供模型应用到返回内容上"},
+			"max_chars": map[string]any{"type": "integer", "description": "返回可读文本的最大字符数。默认 6000，最大 20000。"},
 		}, []string{"url"}),
 		Risk: contracts.RiskLow,
 	}
@@ -149,10 +149,10 @@ func (WebSearchTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:WebSearch",
 		Source:      "tool",
 		Name:        "WebSearch",
-		Description: "Search the public web for a query and return a concise list of results with titles, URLs, and snippets. Uses DuckDuckGo HTML as the local search provider.",
+		Description: "在公开 Web 上搜索查询词，并返回包含标题、URL 和摘要的简洁结果列表。本地搜索提供方使用 DuckDuckGo HTML。",
 		InputSchema: runtime.Schema(map[string]any{
-			"query":       map[string]any{"type": "string", "description": "Search query"},
-			"max_results": map[string]any{"type": "integer", "description": "Number of results to return. Default 5, max 10."},
+			"query":       map[string]any{"type": "string", "description": "搜索查询词"},
+			"max_results": map[string]any{"type": "integer", "description": "返回结果数量。默认 5，最大 10。"},
 		}, []string{"query"}),
 		Risk: contracts.RiskLow,
 	}

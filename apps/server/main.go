@@ -19,7 +19,7 @@ func main() {
 		server.WithMaxRequestBodySize(maxRequestBodySize),
 	)
 	httpServer.Register(h)
-	log.Printf("Local Claude Code server listening on http://%s", addr)
+	log.Printf("Lmy' Harness Agent server listening on http://%s", addr)
 	log.Printf("Serving frontend from %s", staticDir)
 	h.Spin()
 }

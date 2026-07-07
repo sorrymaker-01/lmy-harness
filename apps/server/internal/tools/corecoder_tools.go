@@ -47,10 +47,10 @@ func (t *BashTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:bash",
 		Source:      "tool",
 		Name:        "bash",
-		Description: "Execute a shell command. Returns stdout, stderr, and exit code. Use this for running tests, installing packages, git operations, etc.",
+		Description: "执行 shell 命令，并返回 stdout、stderr 和退出码。适用于运行测试、安装依赖、执行 git 操作等。",
 		InputSchema: runtime.Schema(map[string]any{
-			"command": map[string]any{"type": "string", "description": "The shell command to run"},
-			"timeout": map[string]any{"type": "integer", "description": "Timeout in seconds (default 120)"},
+			"command": map[string]any{"type": "string", "description": "要执行的 shell 命令"},
+			"timeout": map[string]any{"type": "integer", "description": "超时时间，单位秒（默认 120）"},
 		}, []string{"command"}),
 		Risk: contracts.RiskLow,
 	}
@@ -161,11 +161,11 @@ func (ReadFileTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:read_file",
 		Source:      "tool",
 		Name:        "read_file",
-		Description: "Read a file's contents with line numbers. Always read a file before editing it.",
+		Description: "读取文件内容并带上行号。编辑文件前应先读取文件。",
 		InputSchema: runtime.Schema(map[string]any{
-			"file_path": map[string]any{"type": "string", "description": "Path to the file"},
-			"offset":    map[string]any{"type": "integer", "description": "Start line (1-based). Default 1."},
-			"limit":     map[string]any{"type": "integer", "description": "Max lines to read. Default 2000."},
+			"file_path": map[string]any{"type": "string", "description": "文件路径"},
+			"offset":    map[string]any{"type": "integer", "description": "起始行号（从 1 开始，默认 1）"},
+			"limit":     map[string]any{"type": "integer", "description": "最多读取的行数（默认 2000）"},
 		}, []string{"file_path"}),
 		Risk: contracts.RiskLow,
 	}
@@ -232,10 +232,10 @@ func (WriteFileTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:write_file",
 		Source:      "tool",
 		Name:        "write_file",
-		Description: "Create a new file or completely overwrite an existing one. For small edits to existing files, prefer edit_file instead.",
+		Description: "创建新文件或完整覆盖已有文件。对已有文件做小范围修改时，优先使用 edit_file。",
 		InputSchema: runtime.Schema(map[string]any{
-			"file_path": map[string]any{"type": "string", "description": "Path for the file"},
-			"content":   map[string]any{"type": "string", "description": "Full file content to write"},
+			"file_path": map[string]any{"type": "string", "description": "目标文件路径"},
+			"content":   map[string]any{"type": "string", "description": "要写入的完整文件内容"},
 		}, []string{"file_path", "content"}),
 		Risk: contracts.RiskLow,
 	}
@@ -269,11 +269,11 @@ func (EditFileTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:edit_file",
 		Source:      "tool",
 		Name:        "edit_file",
-		Description: "Edit a file by replacing an exact string match. old_string must appear exactly once in the file for safety. Include enough surrounding context to ensure uniqueness.",
+		Description: "通过精确字符串替换来编辑文件。为保证安全，old_string 必须在文件中只出现一次；请包含足够上下文以确保唯一。",
 		InputSchema: runtime.Schema(map[string]any{
-			"file_path":  map[string]any{"type": "string", "description": "Path to the file to edit"},
-			"old_string": map[string]any{"type": "string", "description": "Exact text to find (must be unique in file)"},
-			"new_string": map[string]any{"type": "string", "description": "Replacement text"},
+			"file_path":  map[string]any{"type": "string", "description": "要编辑的文件路径"},
+			"old_string": map[string]any{"type": "string", "description": "要查找的精确文本（必须在文件中唯一）"},
+			"new_string": map[string]any{"type": "string", "description": "替换后的文本"},
 		}, []string{"file_path", "old_string", "new_string"}),
 		Risk: contracts.RiskLow,
 	}
@@ -322,10 +322,10 @@ func (GlobTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:glob",
 		Source:      "tool",
 		Name:        "glob",
-		Description: "Find files matching a glob pattern. Supports ** for recursive matching (e.g. '**/*.py').",
+		Description: "查找匹配 glob 模式的文件。支持使用 ** 进行递归匹配（例如 '**/*.py'）。",
 		InputSchema: runtime.Schema(map[string]any{
-			"pattern": map[string]any{"type": "string", "description": "Glob pattern, e.g. '**/*.py' or 'src/**/*.ts'"},
-			"path":    map[string]any{"type": "string", "description": "Directory to search in (default: cwd)"},
+			"pattern": map[string]any{"type": "string", "description": "Glob 模式，例如 '**/*.py' 或 'src/**/*.ts'"},
+			"path":    map[string]any{"type": "string", "description": "搜索目录（默认当前工作目录）"},
 		}, []string{"pattern"}),
 		Risk: contracts.RiskLow,
 	}
@@ -387,7 +387,7 @@ func (GlobTool) Invoke(ctx context.Context, input map[string]any, invokeCtx runt
 		lines = append(lines, fmt.Sprintf("... (%d matches, showing first 100)", len(hits)))
 	}
 	if len(lines) == 0 {
-		return "No files matched.", nil
+		return "没有匹配的文件。", nil
 	}
 	return strings.Join(lines, "\n"), nil
 }
@@ -403,11 +403,11 @@ func (GrepTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:grep",
 		Source:      "tool",
 		Name:        "grep",
-		Description: "Search file contents with regex. Returns matching lines with file path and line number.",
+		Description: "使用正则搜索文件内容，返回匹配行及其文件路径和行号。",
 		InputSchema: runtime.Schema(map[string]any{
-			"pattern": map[string]any{"type": "string", "description": "Regex pattern to search for"},
-			"path":    map[string]any{"type": "string", "description": "File or directory to search (default: cwd)"},
-			"include": map[string]any{"type": "string", "description": "Only search files matching this glob (e.g. '*.py')"},
+			"pattern": map[string]any{"type": "string", "description": "要搜索的正则表达式"},
+			"path":    map[string]any{"type": "string", "description": "要搜索的文件或目录（默认当前工作目录）"},
+			"include": map[string]any{"type": "string", "description": "仅搜索匹配该 glob 的文件（例如 '*.py'）"},
 		}, []string{"pattern"}),
 		Risk: contracts.RiskLow,
 	}
@@ -455,7 +455,7 @@ func (GrepTool) Invoke(ctx context.Context, input map[string]any, invokeCtx runt
 		}
 	}
 	if len(matches) == 0 {
-		return "No matches found.", nil
+		return "没有找到匹配结果。", nil
 	}
 	return strings.Join(matches, "\n"), nil
 }
@@ -473,9 +473,9 @@ func (AgentTool) Tool() contracts.RuntimeTool {
 		ID:          "tool:agent",
 		Source:      "tool",
 		Name:        "agent",
-		Description: "Spawn a sub-agent to handle a complex sub-task independently. The sub-agent has its own context and tool access.",
+		Description: "启动一个子代理独立处理复杂子任务。子代理拥有自己的上下文和工具访问能力。",
 		InputSchema: runtime.Schema(map[string]any{
-			"task": map[string]any{"type": "string", "description": "What the sub-agent should accomplish"},
+			"task": map[string]any{"type": "string", "description": "子代理需要完成的任务"},
 		}, []string{"task"}),
 		Risk: contracts.RiskLow,
 	}

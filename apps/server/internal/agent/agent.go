@@ -305,7 +305,7 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 				if _, loaded := loadedSkills[request.Name]; loaded {
 					modelMessages = append(modelMessages, contracts.LLMMessage{
 						Role:    contracts.RoleUser,
-						Content: "Skill /" + request.Name + " has already been loaded in this turn. Use the loaded skill context and answer the original user request now.",
+						Content: "Skill /" + request.Name + " 在本轮已经加载。请使用已加载的 skill 上下文，直接回答原始用户请求。",
 					})
 					continue
 				}
@@ -313,7 +313,7 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 				if !ok {
 					modelMessages = append(modelMessages, contracts.LLMMessage{
 						Role:    contracts.RoleUser,
-						Content: "Requested skill /" + request.Name + " is unavailable or disabled. Answer using the available context and tools.",
+						Content: "请求的 skill /" + request.Name + " 不可用或已禁用。请基于当前可用上下文和工具回答。",
 					})
 					continue
 				}
@@ -554,17 +554,17 @@ func buildContextSnapshot(conversationID string, turnID string, userMessage stri
 	sources := []contracts.ContextSource{
 		{
 			Type:    "short_memory",
-			Title:   "Short memory",
+			Title:   "短期记忆",
 			Content: renderShortMemory(shortMemory),
 		},
 		{
 			Type:    "working_memory",
-			Title:   "Working memory",
+			Title:   "工作记忆",
 			Content: renderWorkingMemory(workingMemory),
 		},
 		{
 			Type:    "conversation",
-			Title:   "Recent conversation",
+			Title:   "近期对话",
 			Content: renderMessages(recent),
 		},
 	}
@@ -573,7 +573,7 @@ func buildContextSnapshot(conversationID string, turnID string, userMessage stri
 	if len(toolResults) > 0 {
 		sources = append(sources, contracts.ContextSource{
 			Type:    "tool",
-			Title:   "Tool results",
+			Title:   "工具结果",
 			Content: shared.CompactJSON(toolResults, 2000),
 		})
 	}
@@ -621,7 +621,7 @@ func startupContextSources(startup claudecode.StartupContext) []contracts.Contex
 	if len(startup.MCP.Servers) > 0 {
 		sources = append(sources, contracts.ContextSource{
 			Type:    "mcp",
-			Title:   "MCP servers",
+			Title:   "MCP 服务",
 			Content: shared.CompactJSON(startup.MCP.Servers, 4000),
 		})
 	}
@@ -710,84 +710,84 @@ func appendSkillContext(messages []contracts.LLMMessage, originalUserMessage str
 		mode = "slash"
 	}
 	content := strings.Join([]string{
-		"[Skill context loaded progressively]",
-		"Selection mode: " + mode,
+		"[已渐进加载 Skill 上下文]",
+		"选择方式：" + mode,
 		renderSkillPackage(detail),
 		"",
-		"Original user request:",
+		"原始用户请求：",
 		originalUserMessage,
 		"",
-		"Use this loaded skill package as prompt context to answer the original user request. Do not describe the skill as a runnable action or a tool call.",
+		"请把上面的 skill 包作为提示上下文来回答原始用户请求。不要把 skill 描述成可执行动作或工具调用。",
 	}, "\n")
 	return append(messages, contracts.LLMMessage{Role: contracts.RoleUser, Content: content})
 }
 
 func appendSkillInstructionsContext(messages []contracts.LLMMessage, detail skills.Detail, reason string, originalUserMessage string) []contracts.LLMMessage {
 	content := strings.Join([]string{
-		"[Skill instructions loaded progressively]",
-		"Model reason: " + reason,
+		"[已渐进加载 Skill 详细说明]",
+		"模型请求原因：" + reason,
 		"",
 		renderSkillPackage(detail),
 		"",
-		"Original user request:",
+		"原始用户请求：",
 		originalUserMessage,
 		"",
-		"Use this skill package as prompt context to continue. Skills have no execution method and are not tools; do not invent a skill tool call.",
+		"请把这个 skill 包作为提示上下文继续处理。Skill 没有执行方法，也不是工具；不要虚构 skill 工具调用。",
 	}, "\n")
 	return append(messages, contracts.LLMMessage{Role: contracts.RoleUser, Content: content})
 }
 
 func renderSkillPackage(detail skills.Detail) string {
 	return strings.Join([]string{
-		"## Skill Metadata",
-		"Name: /" + detail.Name,
+		"## Skill 元数据",
+		"名称：/" + detail.Name,
 		"ID: " + detail.ID,
-		"Source: " + emptyFallback(detail.Source, "unknown"),
-		"Path: " + detail.Path,
-		"Purpose: " + detail.Purpose,
-		"When to use: " + emptyFallback(detail.WhenToUse, detail.Description),
-		"Triggers: " + strings.Join(detail.Triggers, ", "),
-		"User invocable: " + fmt.Sprintf("%t", detail.UserInvocable),
-		"Disable model invocation: " + fmt.Sprintf("%t", detail.DisableModelInvocation),
-		"Allowed tools: " + strings.Join(detail.AllowedTools, ", "),
-		"Disallowed tools: " + strings.Join(detail.DisallowedTools, ", "),
-		"Model: " + detail.Model,
-		"Effort: " + detail.Effort,
-		"Context: " + detail.Context,
-		"Agent: " + detail.Agent,
-		"Shell: " + detail.Shell,
+		"来源：" + emptyFallback(detail.Source, "未知"),
+		"路径：" + detail.Path,
+		"用途：" + detail.Purpose,
+		"适用场景：" + emptyFallback(detail.WhenToUse, detail.Description),
+		"触发词：" + strings.Join(detail.Triggers, ", "),
+		"允许用户调用：" + fmt.Sprintf("%t", detail.UserInvocable),
+		"禁止模型调用：" + fmt.Sprintf("%t", detail.DisableModelInvocation),
+		"允许工具：" + strings.Join(detail.AllowedTools, ", "),
+		"禁止工具：" + strings.Join(detail.DisallowedTools, ", "),
+		"模型：" + detail.Model,
+		"推理强度：" + detail.Effort,
+		"上下文：" + detail.Context,
+		"子代理：" + detail.Agent,
+		"Shell：" + detail.Shell,
 		"",
 		"## README.md",
-		emptyFallback(detail.Readme, "No README.md content."),
+		emptyFallback(detail.Readme, "没有 README.md 内容。"),
 		"",
-		"## Description",
-		emptyFallback(detail.Description, "No description."),
+		"## 描述",
+		emptyFallback(detail.Description, "没有描述。"),
 		"",
-		"## Instructions",
-		emptyFallback(detail.Instructions, "No instructions."),
+		"## 指令",
+		emptyFallback(detail.Instructions, "没有指令。"),
 		"",
-		"## Examples",
+		"## 示例",
 		renderExamples(detail.Examples),
 		"",
-		"## Resources",
+		"## 资源",
 		renderResources(detail.Resources),
 	}, "\n")
 }
 
 func renderExamples(examples []skills.Example) string {
 	if len(examples) == 0 {
-		return "No examples."
+		return "没有示例。"
 	}
 	blocks := make([]string, 0, len(examples))
 	for _, example := range examples {
 		title := strings.TrimSpace(example.Name)
 		if title == "" {
-			title = "Example"
+			title = "示例"
 		}
 		blocks = append(blocks, strings.Join([]string{
 			"### " + title,
-			"User: " + example.User,
-			"Assistant: " + example.Assistant,
+			"用户：" + example.User,
+			"助手：" + example.Assistant,
 		}, "\n"))
 	}
 	return strings.Join(blocks, "\n\n")
@@ -795,16 +795,16 @@ func renderExamples(examples []skills.Example) string {
 
 func renderResources(resources []skills.Resource) string {
 	if len(resources) == 0 {
-		return "No resources."
+		return "没有资源。"
 	}
 	blocks := make([]string, 0, len(resources))
 	for _, resource := range resources {
-		lines := []string{"### " + resource.Name, "Type: " + resource.Type}
+		lines := []string{"### " + resource.Name, "类型：" + resource.Type}
 		if strings.TrimSpace(resource.URI) != "" {
 			lines = append(lines, "URI: "+resource.URI)
 		}
 		if strings.TrimSpace(resource.Content) != "" {
-			lines = append(lines, "Content: "+resource.Content)
+			lines = append(lines, "内容："+resource.Content)
 		}
 		blocks = append(blocks, strings.Join(lines, "\n"))
 	}
@@ -825,8 +825,8 @@ func renderLoadedSkill(detail skills.Detail, explicit bool) string {
 	}
 	return strings.Join([]string{
 		"Skill: /" + detail.Name,
-		"Mode: " + mode,
-		"Loaded package:",
+		"模式：" + mode,
+		"已加载的提示包：",
 		shared.TrimRunes(renderSkillPackage(detail), 2200),
 	}, "\n")
 }
@@ -834,9 +834,9 @@ func renderLoadedSkill(detail skills.Detail, explicit bool) string {
 func renderLoadedSkillForModel(detail skills.Detail, reason string) string {
 	return strings.Join([]string{
 		"Skill: /" + detail.Name,
-		"Mode: 模型请求更多 skill 操作信息",
-		"Reason: " + strings.TrimSpace(reason),
-		"Loaded package:",
+		"模式：模型请求更多 skill 操作信息",
+		"原因：" + strings.TrimSpace(reason),
+		"已加载的提示包：",
 		shared.TrimRunes(renderSkillPackage(detail), 2200),
 	}, "\n")
 }
@@ -874,29 +874,29 @@ func normalizeRequestedSkill(value string) string {
 }
 
 func renderShortMemory(memory contracts.ShortMemory) string {
-	parts := []string{"Summary: " + memory.Summary}
+	parts := []string{"摘要：" + memory.Summary}
 	if memory.ActiveTask != "" {
-		parts = append(parts, "Active task: "+memory.ActiveTask)
+		parts = append(parts, "当前任务："+memory.ActiveTask)
 	}
 	if len(memory.RecentFacts) > 0 {
-		parts = append(parts, "Recent facts:\n- "+strings.Join(memory.RecentFacts, "\n- "))
+		parts = append(parts, "近期事实：\n- "+strings.Join(memory.RecentFacts, "\n- "))
 	}
 	return strings.Join(parts, "\n")
 }
 
 func renderWorkingMemory(memory contracts.WorkingMemory) string {
-	parts := []string{"Intent: " + memory.Intent}
+	parts := []string{"意图：" + memory.Intent}
 	if memory.ActiveTask != nil {
-		parts = append(parts, "Active task: "+memory.ActiveTask.Goal+" ("+memory.ActiveTask.Status+")")
+		parts = append(parts, "当前任务："+memory.ActiveTask.Goal+" ("+memory.ActiveTask.Status+")")
 	}
 	if len(memory.Constraints) > 0 {
-		parts = append(parts, "Constraints:\n- "+strings.Join(memory.Constraints, "\n- "))
+		parts = append(parts, "约束：\n- "+strings.Join(memory.Constraints, "\n- "))
 	}
 	if len(memory.ToolResultSummaries) > 0 {
-		parts = append(parts, "Tool summaries:\n- "+strings.Join(memory.ToolResultSummaries, "\n- "))
+		parts = append(parts, "工具结果摘要：\n- "+strings.Join(memory.ToolResultSummaries, "\n- "))
 	}
 	if len(memory.Scratchpad) > 0 {
-		parts = append(parts, "Scratchpad:\n- "+strings.Join(memory.Scratchpad, "\n- "))
+		parts = append(parts, "临时记录：\n- "+strings.Join(memory.Scratchpad, "\n- "))
 	}
 	return strings.Join(parts, "\n")
 }
@@ -923,10 +923,10 @@ func finalTaskStatus(results []contracts.ToolResult) string {
 
 func buildInitialModelMessages(shortMemory contracts.ShortMemory, recent []contracts.Message, userMessage string) []contracts.LLMMessage {
 	messages := []contracts.LLMMessage{}
-	if shortMemory.Summary != "" && shortMemory.Summary != "No prior short-term memory." {
+	if hasUsefulShortMemory(shortMemory.Summary) {
 		messages = append(messages,
-			contracts.LLMMessage{Role: contracts.RoleUser, Content: "[Context compressed - conversation summary]\n" + renderShortMemory(shortMemory)},
-			contracts.LLMMessage{Role: contracts.RoleAssistant, Content: "Got it, I have the context from our earlier conversation."},
+			contracts.LLMMessage{Role: contracts.RoleUser, Content: "[上下文已压缩 - 对话摘要]\n" + renderShortMemory(shortMemory)},
+			contracts.LLMMessage{Role: contracts.RoleAssistant, Content: "收到，我已经理解此前对话的上下文。"},
 		)
 	}
 	for _, message := range recent {
@@ -936,6 +936,11 @@ func buildInitialModelMessages(shortMemory contracts.ShortMemory, recent []contr
 	}
 	messages = append(messages, contracts.LLMMessage{Role: contracts.RoleUser, Content: userMessage})
 	return messages
+}
+
+func hasUsefulShortMemory(summary string) bool {
+	trimmed := strings.TrimSpace(summary)
+	return trimmed != "" && trimmed != "没有历史短期记忆。" && trimmed != "No prior short-term memory."
 }
 
 func insertKnowledgeContext(messages []contracts.LLMMessage, retrieval knowledge.RetrievalResult) []contracts.LLMMessage {
@@ -961,8 +966,8 @@ func insertKnowledgeContext(messages []contracts.LLMMessage, retrieval knowledge
 
 func renderKnowledgePromptContext(retrieval knowledge.RetrievalResult) string {
 	sections := []string{
-		"[Retrieved knowledge context]",
-		"Use these retrieved knowledge snippets when they are relevant to the user request. Ignore them if they are not relevant. Do not claim they came from tool execution.",
+		"[召回的知识库上下文]",
+		"当这些知识片段与用户请求相关时，请优先参考它们；如果不相关，请忽略。不要声称这些内容来自工具执行。",
 	}
 	for i, chunk := range retrieval.RerankedResults {
 		source := strings.TrimSpace(chunk.SourceURI)
@@ -971,16 +976,16 @@ func renderKnowledgePromptContext(retrieval knowledge.RetrievalResult) string {
 		}
 		title := strings.TrimSpace(chunk.Title)
 		if title == "" {
-			title = "Untitled"
+			title = "未命名"
 		}
-		header := fmt.Sprintf("## Result %d: %s", i+1, title)
+		header := fmt.Sprintf("## 结果 %d：%s", i+1, title)
 		meta := []string{
-			"Source: " + source,
-			"Chunk: " + chunk.ID,
-			"Recall: " + strings.Join(chunk.Sources, ", "),
+			"来源：" + source,
+			"片段：" + chunk.ID,
+			"召回依据：" + strings.Join(chunk.Sources, ", "),
 		}
 		if strings.TrimSpace(chunk.HeadingPath) != "" {
-			meta = append(meta, "Heading: "+chunk.HeadingPath)
+			meta = append(meta, "标题路径："+chunk.HeadingPath)
 		}
 		sections = append(sections, strings.Join([]string{
 			header,
@@ -993,7 +998,7 @@ func renderKnowledgePromptContext(retrieval knowledge.RetrievalResult) string {
 
 func renderKnowledgeContext(retrieval knowledge.RetrievalResult) string {
 	if len(retrieval.RerankedResults) == 0 {
-		return "No relevant knowledge chunks found."
+		return "未找到相关知识片段。"
 	}
 	lines := []string{}
 	for i, chunk := range retrieval.RerankedResults {
@@ -1047,8 +1052,8 @@ func compressModelMessages(messages *[]contracts.LLMMessage, loadedSkills []skil
 	tail := append([]contracts.LLMMessage(nil), (*messages)[split:]...)
 	summary := extractKeyInfo(old)
 	head := []contracts.LLMMessage{
-		{Role: contracts.RoleUser, Content: "[Context compressed - conversation summary]\n" + summary},
-		{Role: contracts.RoleAssistant, Content: "Got it, I have the context from our earlier conversation."},
+		{Role: contracts.RoleUser, Content: "[上下文已压缩 - 对话摘要]\n" + summary},
+		{Role: contracts.RoleAssistant, Content: "收到，我已经理解此前对话的上下文。"},
 	}
 	head = append(head, retainedSkillContextMessages(loadedSkills)...)
 	*messages = append(head, tail...)
@@ -1065,7 +1070,7 @@ func snipToolOutputs(messages []contracts.LLMMessage) {
 			continue
 		}
 		messages[i].Content = strings.Join(lines[:3], "\n") +
-			"\n... (tool output snipped to save context) ...\n" +
+			"\n...（为节省上下文，已截断工具输出）...\n" +
 			strings.Join(lines[len(lines)-3:], "\n")
 	}
 }
@@ -1132,64 +1137,64 @@ func systemPrompt(tools []contracts.RuntimeTool, skillManifests []skills.Manifes
 		toolLines = append(toolLines, "- **"+tool.Name+"**: "+tool.Description)
 	}
 	if len(toolLines) == 0 {
-		toolLines = append(toolLines, "- No local runtime tools are registered.")
+		toolLines = append(toolLines, "- 当前没有注册本地运行时工具。")
 	}
 	skillLines := make([]string, 0, len(skillManifests))
 	for _, skill := range skillManifests {
 		line := "- /" + skill.Name + ": " + skill.Purpose
 		whenToUse := firstNonEmptyString(skill.WhenToUse, skill.Description)
 		if strings.TrimSpace(whenToUse) != "" {
-			line += " Use when: " + whenToUse
+			line += " 适用场景：" + whenToUse
 		}
 		if len(skill.Triggers) > 0 {
-			line += " Triggers: " + strings.Join(skill.Triggers, ", ")
+			line += " 触发词：" + strings.Join(skill.Triggers, ", ")
 		}
 		if strings.TrimSpace(skill.Source) != "" {
-			line += " Source: " + skill.Source
+			line += " 来源：" + skill.Source
 		}
 		skillLines = append(skillLines, line)
 	}
 	if len(skillLines) == 0 {
-		skillLines = append(skillLines, "- No skills enabled.")
+		skillLines = append(skillLines, "- 当前没有启用 skill。")
 	}
 	return strings.Join([]string{
-		"You are Local Claude Code, an agentic coding assistant running behind a web chat interface.",
-		"Operate in a loop: gather context, take an action when useful, observe results, verify progress, and continue until you can answer the user.",
+		"你是一个能够实现工作任务并进行深度排疑解惑的智能助手，运行在本地 Web 对话界面背后。",
+		"你需要以循环方式工作：收集上下文，在有价值时采取行动，观察结果，验证进展，并持续推进，直到能够可靠地回答用户。",
 		"",
 		renderStartupPrompt(startup),
 		"",
-		"# Tools",
-		"Tools are executable capabilities exposed by the local runtime or external integrations. Use them only when they materially help.",
+		"# 工具",
+		"工具是本地运行时或外部集成暴露的可执行能力。只有当工具能实质性帮助完成任务时才使用。",
 		strings.Join(toolLines, "\n"),
 		"",
 		"# MCP",
-		"MCP servers are external tool/data integrations loaded from configuration. MCP is separate from skills.",
+		"MCP 服务是从配置中加载的外部工具或数据集成。MCP 与 skill 是两类不同机制。",
 		renderMCPPrompt(startup.MCP),
 		"",
-		"# Skills",
-		"Skills are not tools. A skill is only a progressive prompt/context package.",
-		"Only enabled, model-invocable skill metadata is listed here: name, purpose, usage description, triggers, and source. Full SKILL.md body, supporting resources, and examples are loaded only when a skill is selected by /skillName, by the lightweight matcher, or by your explicit load request.",
-		"If a listed skill looks relevant but the metadata is insufficient, respond only with <load_skill name=\"skill_name\">why you need the full skill package</load_skill>. The agent will load README.md, Description, Instructions, Examples, and Resources into the next model turn. This is prompt loading only, not tool execution.",
+		"# Skill 提示包",
+		"Skill 不是工具，而是渐进加载的提示词/上下文包。",
+		"这里仅列出已启用且允许模型调用的 skill 元数据：名称、用途、适用说明、触发词和来源。完整的 SKILL.md 正文、支持资源和示例只会在用户通过 /skillName 选择、轻量匹配器命中，或你明确请求加载时进入下一轮模型上下文。",
+		"如果某个已列出的 skill 看起来相关，但元数据不足以完成任务，请只回复 <load_skill name=\"skill_name\">说明为什么需要完整 skill 包</load_skill>。系统会在下一轮加载 README.md、描述、指令、示例和资源。这只是提示上下文加载，不是工具执行。",
 		strings.Join(skillLines, "\n"),
 		"",
-		"# Rules",
-		"1. Use tools when they materially help answer the user.",
-		"2. If you call tools, wait for their results before giving the final answer.",
-		"3. Keep going for multiple rounds when the result shows more work is needed.",
-		"4. Do not call skills as tools, do not invent skill tool calls, and do not describe skills as executable.",
-		"5. Keep skill behavior and MCP behavior separate: skills load prompt context; MCP exposes external tools/resources.",
-		"6. Explain tool failures or policy blocks clearly.",
+		"# 规则",
+		"1. 当工具能实质性帮助回答用户时，主动使用工具。",
+		"2. 如果调用了工具，必须等待工具结果后再给出最终回答。",
+		"3. 当结果显示还需要更多工作时，继续进行多轮处理。",
+		"4. 不要把 skill 当成工具调用，不要虚构 skill 工具调用，也不要把 skill 描述为可执行能力。",
+		"5. 区分 skill 和 MCP：skill 加载提示上下文；MCP 暴露外部工具或资源。",
+		"6. 对工具失败或策略阻断给出清晰解释。",
 	}, "\n")
 }
 
 func renderStartupPrompt(startup claudecode.StartupContext) string {
 	sections := []string{
-		"# Startup Context",
-		"Project root: " + startup.ProjectRoot,
-		"Claude config dir: " + startup.ConfigDir,
+		"# 启动上下文",
+		"项目根目录：" + startup.ProjectRoot,
+		"配置目录：" + startup.ConfigDir,
 	}
 	if len(startup.Instructions) > 0 {
-		sections = append(sections, "## CLAUDE.md Instructions")
+		sections = append(sections, "## CLAUDE.md 指令")
 		for _, file := range startup.Instructions {
 			sections = append(sections, "### "+file.Scope+" "+file.Path+"\n"+shared.TrimRunes(file.Content, 12000))
 		}
@@ -1204,7 +1209,7 @@ func renderStartupPrompt(startup claudecode.StartupContext) string {
 		unscopedRules = append(unscopedRules, rule)
 	}
 	if len(unscopedRules) > 0 {
-		sections = append(sections, "## Rules")
+		sections = append(sections, "## 规则")
 		for _, rule := range unscopedRules {
 			sections = append(sections, "### "+rule.Scope+" "+rule.Path+"\n"+shared.TrimRunes(rule.Content, 8000))
 		}
@@ -1212,22 +1217,22 @@ func renderStartupPrompt(startup claudecode.StartupContext) string {
 	if len(pathScopedRules) > 0 {
 		lines := []string{}
 		for _, rule := range pathScopedRules {
-			lines = append(lines, "- "+rule.Path+" paths: "+strings.Join(rule.Paths, ", "))
+			lines = append(lines, "- "+rule.Path+" 适用路径："+strings.Join(rule.Paths, ", "))
 		}
-		sections = append(sections, "## Path-Scoped Rules\n"+strings.Join(lines, "\n"))
+		sections = append(sections, "## 路径限定规则\n"+strings.Join(lines, "\n"))
 	}
 	if startup.AutoMemory != nil && strings.TrimSpace(startup.AutoMemory.Content) != "" {
-		sections = append(sections, "## Auto Memory\n"+shared.TrimRunes(startup.AutoMemory.Content, 12000))
+		sections = append(sections, "## 自动记忆\n"+shared.TrimRunes(startup.AutoMemory.Content, 12000))
 	}
 	if len(startup.Settings) > 0 {
-		sections = append(sections, "## Settings\n"+shared.CompactJSON(startup.Settings, 6000))
+		sections = append(sections, "## 设置\n"+shared.CompactJSON(startup.Settings, 6000))
 	}
 	return strings.Join(sections, "\n\n")
 }
 
 func renderMCPPrompt(config claudecode.MCPConfig) string {
 	if len(config.Servers) == 0 {
-		return "- No MCP servers discovered from .mcp.json or Claude config."
+		return "- 没有从 .mcp.json 或配置中发现 MCP 服务。"
 	}
 	lines := make([]string, 0, len(config.Servers))
 	for _, server := range config.Servers {
@@ -1236,13 +1241,13 @@ func renderMCPPrompt(config claudecode.MCPConfig) string {
 			target = server.URL
 		}
 		if target == "" {
-			target = "(configured target omitted)"
+			target = "（已省略配置目标）"
 		}
 		line := "- " + server.Name + " [" + server.Scope + "]"
 		if server.Type != "" {
-			line += " type=" + server.Type
+			line += " 类型=" + server.Type
 		}
-		line += " target=" + target
+		line += " 目标=" + target
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")

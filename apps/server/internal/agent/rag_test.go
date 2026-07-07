@@ -66,7 +66,7 @@ func TestAgentInjectsKnowledgeOnlyWhenKnowledgeBaseSelected(t *testing.T) {
 	if len(capture.inputs) != 1 {
 		t.Fatalf("model calls without knowledge base = %d, want 1", len(capture.inputs))
 	}
-	if modelInputContains(capture.inputs[0], "[Retrieved knowledge context]") {
+	if modelInputContains(capture.inputs[0], "[召回的知识库上下文]") {
 		t.Fatal("model input included knowledge context without selected knowledge base")
 	}
 
@@ -81,7 +81,7 @@ func TestAgentInjectsKnowledgeOnlyWhenKnowledgeBaseSelected(t *testing.T) {
 	if len(capture.inputs) != 1 {
 		t.Fatalf("model calls with knowledge base = %d, want 1", len(capture.inputs))
 	}
-	if !modelInputContains(capture.inputs[0], "[Retrieved knowledge context]") {
+	if !modelInputContains(capture.inputs[0], "[召回的知识库上下文]") {
 		t.Fatal("model input did not include selected knowledge base context")
 	}
 }
