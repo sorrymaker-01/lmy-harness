@@ -30,9 +30,10 @@ type Agent struct {
 }
 
 type RunInput struct {
-	ConversationID string
-	UserMessage    string
-	Model          model.Client
+	ConversationID  string
+	UserMessage     string
+	Model           model.Client
+	KnowledgeBaseID string
 }
 
 type RunOutput struct {
@@ -164,8 +165,15 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 	retrievalResult := knowledge.RetrievalResult{}
 	finalAnswer := ""
 
-	if a.knowledge != nil {
-		result, err := a.knowledge.Retrieve(ctx, input.UserMessage, knowledge.RetrievalOptions{ConversationID: input.ConversationID, TopK: 8})
+	knowledgeBaseID := strings.TrimSpace(input.KnowledgeBaseID)
+	if a.knowledge != nil && knowledgeBaseID != "" {
+		result, err := a.knowledge.Retrieve(ctx, input.UserMessage, knowledge.RetrievalOptions{
+			ConversationID: input.ConversationID,
+			TopK:           8,
+			Filter: knowledge.RetrievalFilter{
+				KnowledgeBaseIDs: []string{knowledgeBaseID},
+			},
+		})
 		if err == nil && len(result.RerankedResults) > 0 {
 			retrievalResult = result
 			modelMessages = insertKnowledgeContext(modelMessages, result)

@@ -75,7 +75,10 @@
           <div class="composerInput">
             <textarea id="messageInput" rows="2" placeholder="Message Harness Agent, or type / for skills"></textarea>
             <div id="skillMenu" class="slashMenu hidden" role="listbox" aria-label="Skill 快捷菜单"></div>
-            <select id="modelSelector" class="modelSelector" aria-label="模型选择"></select>
+            <div class="composerControls">
+              <select id="ragKnowledgeSelector" class="knowledgeSelector" aria-label="知识库选择"></select>
+              <select id="modelSelector" class="modelSelector" aria-label="模型选择"></select>
+            </div>
           </div>
           <button id="sendButton" type="submit">Send</button>
         </form>

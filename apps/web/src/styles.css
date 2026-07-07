@@ -1305,7 +1305,7 @@ textarea {
   border-radius: 18px;
   background: #fff;
   color: #1f2328;
-  padding: 15px 16px 42px;
+  padding: 15px 16px 48px;
   box-shadow: 0 2px 10px rgb(0 0 0 / 5%);
 }
 
@@ -1322,10 +1322,19 @@ textarea {
   background: #303236;
 }
 
-.modelSelector {
+.composerControls {
   position: absolute;
   bottom: 9px;
   left: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.modelSelector,
+.knowledgeSelector {
   max-width: min(320px, calc(100% - 24px));
   min-height: 28px;
   border: 1px solid #d5d5cf;
@@ -1337,12 +1346,18 @@ textarea {
   font-weight: 700;
 }
 
-.modelSelector:focus {
+.knowledgeSelector {
+  max-width: min(260px, 48%);
+}
+
+.modelSelector:focus,
+.knowledgeSelector:focus {
   outline: 2px solid #b9dcca;
   outline-offset: 1px;
 }
 
-.modelSelector:not(:disabled):hover {
+.modelSelector:not(:disabled):hover,
+.knowledgeSelector:not(:disabled):hover {
   border-color: #9ed3b8;
   background: #e9f7ef;
   color: #176b46;

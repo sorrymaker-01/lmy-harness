@@ -285,8 +285,9 @@ func (s *HTTPServer) handleTraces(ctx context.Context, c *app.RequestContext) {
 
 func (s *HTTPServer) handleChat(ctx context.Context, c *app.RequestContext) {
 	var body struct {
-		Message       string `json:"message"`
-		ModelConfigID string `json:"modelConfigId"`
+		Message         string `json:"message"`
+		ModelConfigID   string `json:"modelConfigId"`
+		KnowledgeBaseID string `json:"knowledgeBaseId"`
 	}
 	if err := c.BindJSON(&body); err != nil {
 		writeHertzError(c, consts.StatusBadRequest, err.Error())
@@ -303,7 +304,12 @@ func (s *HTTPServer) handleChat(ctx context.Context, c *app.RequestContext) {
 		writeHertzError(c, consts.StatusBadRequest, err.Error())
 		return
 	}
-	output, err := s.agent.Run(ctx, agent.RunInput{ConversationID: conversationID, UserMessage: body.Message, Model: modelClient})
+	output, err := s.agent.Run(ctx, agent.RunInput{
+		ConversationID:  conversationID,
+		UserMessage:     body.Message,
+		Model:           modelClient,
+		KnowledgeBaseID: body.KnowledgeBaseID,
+	})
 	if err != nil {
 		writeHertzError(c, consts.StatusInternalServerError, err.Error())
 		return
@@ -313,8 +319,9 @@ func (s *HTTPServer) handleChat(ctx context.Context, c *app.RequestContext) {
 
 func (s *HTTPServer) handleChatStream(ctx context.Context, c *app.RequestContext) {
 	var body struct {
-		Message       string `json:"message"`
-		ModelConfigID string `json:"modelConfigId"`
+		Message         string `json:"message"`
+		ModelConfigID   string `json:"modelConfigId"`
+		KnowledgeBaseID string `json:"knowledgeBaseId"`
 	}
 	if err := c.BindJSON(&body); err != nil {
 		writeHertzError(c, consts.StatusBadRequest, err.Error())
@@ -340,7 +347,12 @@ func (s *HTTPServer) handleChatStream(ctx context.Context, c *app.RequestContext
 		})
 		return
 	}
-	output, err := s.agent.RunStream(ctx, agent.RunInput{ConversationID: conversationID, UserMessage: body.Message, Model: modelClient}, func(event contracts.AgentStreamEvent) error {
+	output, err := s.agent.RunStream(ctx, agent.RunInput{
+		ConversationID:  conversationID,
+		UserMessage:     body.Message,
+		Model:           modelClient,
+		KnowledgeBaseID: body.KnowledgeBaseID,
+	}, func(event contracts.AgentStreamEvent) error {
 		return writeSSEEvent(writer, event)
 	})
 	if err != nil {

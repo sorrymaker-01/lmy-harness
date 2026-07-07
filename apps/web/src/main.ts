@@ -208,6 +208,7 @@ const modelPageEl = mustQuery<HTMLElement>("#modelPage");
 const modelConfigListEl = mustQuery<HTMLDivElement>("#modelConfigList");
 const addModelConfigEl = mustQuery<HTMLButtonElement>("#addModelConfig");
 const modelSelectorEl = mustQuery<HTMLSelectElement>("#modelSelector");
+const ragKnowledgeSelectorEl = mustQuery<HTMLSelectElement>("#ragKnowledgeSelector");
 const skillMenuEl = mustQuery<HTMLDivElement>("#skillMenu");
 const chatPaneEl = mustQuery<HTMLElement>(".chatPane");
 
@@ -222,6 +223,7 @@ let enabledSkillNames = new Set<string>();
 let activeConversationId = "";
 let activeModelConfigId = window.localStorage.getItem("activeModelConfigId") || "default";
 let activeKnowledgeBaseId = window.localStorage.getItem("activeKnowledgeBaseId") || "";
+let activeRagKnowledgeBaseId = window.localStorage.getItem("activeRagKnowledgeBaseId") || "";
 let isStreaming = false;
 let currentView: "chat" | "skills" | "knowledge" | "models" = "chat";
 let slashMenuIndex = 0;
@@ -268,6 +270,15 @@ modelSelectorEl.addEventListener("change", () => {
   window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
 });
 
+ragKnowledgeSelectorEl.addEventListener("change", () => {
+  activeRagKnowledgeBaseId = ragKnowledgeSelectorEl.value || "";
+  if (activeRagKnowledgeBaseId) {
+    window.localStorage.setItem("activeRagKnowledgeBaseId", activeRagKnowledgeBaseId);
+  } else {
+    window.localStorage.removeItem("activeRagKnowledgeBaseId");
+  }
+});
+
 skillsNavEl.addEventListener("click", async () => {
   if (isStreaming) return;
   setView("skills");
@@ -281,11 +292,7 @@ skillsNavEl.addEventListener("click", async () => {
 knowledgeNavEl.addEventListener("click", async () => {
   if (isStreaming) return;
   setView("knowledge");
-  if (knowledgeBases.length === 0 && !knowledgeLoadError) {
-    await loadKnowledge().catch(showKnowledgeError);
-  } else {
-    renderKnowledge();
-  }
+  await loadKnowledge().catch(showKnowledgeError);
 });
 
 modelNavEl.addEventListener("click", async () => {
@@ -356,6 +363,7 @@ void boot().catch(showPageError);
 async function boot(): Promise<void> {
   await loadConversations();
   await loadModelConfigs().catch(showModelError);
+  await loadKnowledgeBasesForSelector().catch(showKnowledgeError);
   await loadSkills().catch((error) => {
     showSkillError(error);
   });
@@ -386,9 +394,18 @@ async function loadSkills(): Promise<void> {
   renderSkills();
 }
 
+async function loadKnowledgeBasesForSelector(): Promise<void> {
+  const body = await request<KnowledgeBasesResponse>("/api/knowledge-bases");
+  knowledgeBases = body.knowledgeBases ?? [];
+  normalizeRagKnowledgeSelection();
+  knowledgeLoadError = "";
+  renderRagKnowledgeSelector();
+}
+
 async function loadKnowledge(): Promise<void> {
   const basesBody = await request<KnowledgeBasesResponse>("/api/knowledge-bases");
   knowledgeBases = basesBody.knowledgeBases ?? [];
+  normalizeRagKnowledgeSelection();
   if (!knowledgeBases.some((base) => base.id === activeKnowledgeBaseId)) {
     activeKnowledgeBaseId = knowledgeBases[0]?.id || "";
     if (activeKnowledgeBaseId) {
@@ -683,7 +700,7 @@ async function streamChat(content: string, streamState: StreamRenderState): Prom
       "accept": "text/event-stream",
       "content-type": "application/json"
     },
-    body: JSON.stringify({ message: content, modelConfigId: activeModelConfigId })
+    body: JSON.stringify({ message: content, modelConfigId: activeModelConfigId, knowledgeBaseId: selectedRagKnowledgeBaseId() })
   });
 
   if (!response.ok) {
@@ -979,6 +996,7 @@ function renderSkills(): void {
 }
 
 function renderKnowledge(): void {
+  renderRagKnowledgeSelector();
   const activeBase = knowledgeBases.find((base) => base.id === activeKnowledgeBaseId) || null;
   createKnowledgeBaseEl.disabled = isStreaming || isKnowledgeImporting;
   addKnowledgeEl.disabled = isStreaming || isKnowledgeImporting || !activeBase;
@@ -1128,6 +1146,28 @@ function renderKnowledge(): void {
   }
 }
 
+function renderRagKnowledgeSelector(): void {
+  normalizeRagKnowledgeSelection();
+  ragKnowledgeSelectorEl.innerHTML = "";
+  ragKnowledgeSelectorEl.disabled = isStreaming;
+
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "不选择知识库";
+  ragKnowledgeSelectorEl.appendChild(empty);
+
+  for (const base of knowledgeBases) {
+    const option = document.createElement("option");
+    option.value = base.id;
+    const hasContent = (base.childChunkCount ?? 0) > 0;
+    const meta = hasContent ? `${base.documentCount || 0} docs` : "空";
+    option.textContent = `${base.name || "Untitled"} · ${meta}`;
+    ragKnowledgeSelectorEl.appendChild(option);
+  }
+
+  ragKnowledgeSelectorEl.value = activeRagKnowledgeBaseId;
+}
+
 function renderModelSelector(): void {
   modelSelectorEl.innerHTML = "";
   modelSelectorEl.disabled = isStreaming;
@@ -1152,6 +1192,19 @@ function renderModelSelector(): void {
     window.localStorage.setItem("activeModelConfigId", activeModelConfigId);
   }
   modelSelectorEl.value = activeModelConfigId;
+}
+
+function normalizeRagKnowledgeSelection(): void {
+  if (!activeRagKnowledgeBaseId) return;
+  if (knowledgeBases.some((base) => base.id === activeRagKnowledgeBaseId)) return;
+  activeRagKnowledgeBaseId = "";
+  window.localStorage.removeItem("activeRagKnowledgeBaseId");
+}
+
+function selectedRagKnowledgeBaseId(): string {
+  const base = knowledgeBases.find((item) => item.id === activeRagKnowledgeBaseId);
+  if (!base || (base.childChunkCount ?? 0) <= 0) return "";
+  return base.id;
 }
 
 function renderModelConfigs(): void {

@@ -166,6 +166,55 @@ func TestStoreImportRetrieveAndDeleteWithSQLite(t *testing.T) {
 	}
 }
 
+func TestRetrieveFiltersByKnowledgeBase(t *testing.T) {
+	root := t.TempDir()
+	database, err := statedb.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatalf("open state db: %v", err)
+	}
+	defer database.Close()
+	store, err := NewStoreWithDB(filepath.Join(root, "knowledge"), database)
+	if err != nil {
+		t.Fatalf("NewStoreWithDB() error = %v", err)
+	}
+
+	left, err := store.CreateKnowledgeBase(testContext(), "Left", "")
+	if err != nil {
+		t.Fatalf("CreateKnowledgeBase(left) error = %v", err)
+	}
+	right, err := store.CreateKnowledgeBase(testContext(), "Right", "")
+	if err != nil {
+		t.Fatalf("CreateKnowledgeBase(right) error = %v", err)
+	}
+	if _, err := store.ImportToKnowledgeBase(testContext(), left.ID, "left.md", "text/markdown", strings.NewReader("shared retrieval token only left knowledge base should appear")); err != nil {
+		t.Fatalf("ImportToKnowledgeBase(left) error = %v", err)
+	}
+	if _, err := store.ImportToKnowledgeBase(testContext(), right.ID, "right.md", "text/markdown", strings.NewReader("shared retrieval token only right knowledge base should not appear")); err != nil {
+		t.Fatalf("ImportToKnowledgeBase(right) error = %v", err)
+	}
+
+	result, err := store.Retrieve(testContext(), "shared retrieval token", RetrievalOptions{
+		TopK: 8,
+		Filter: RetrievalFilter{
+			KnowledgeBaseIDs: []string{" " + left.ID + " "},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Retrieve() error = %v", err)
+	}
+	if len(result.RerankedResults) == 0 {
+		t.Fatal("Retrieve() returned no results")
+	}
+	for _, chunk := range result.RerankedResults {
+		if chunk.KnowledgeBaseID != left.ID {
+			t.Fatalf("retrieved chunk from knowledge base %q, want %q", chunk.KnowledgeBaseID, left.ID)
+		}
+	}
+	if len(result.Filter.KnowledgeBaseIDs) != 1 || result.Filter.KnowledgeBaseIDs[0] != left.ID {
+		t.Fatalf("normalized filter = %+v, want only %q", result.Filter, left.ID)
+	}
+}
+
 func TestDeleteDocumentMarksVectorRowsDeleted(t *testing.T) {
 	root := t.TempDir()
 	database, err := statedb.Open(filepath.Join(root, "state.db"))

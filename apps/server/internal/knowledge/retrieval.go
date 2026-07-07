@@ -26,7 +26,7 @@ func (s *Store) Retrieve(ctx context.Context, query string, options RetrievalOpt
 	vectorResults, _ := s.vectorRecall(vectorCtx, query, options)
 	cancelVector()
 	merged := mergeRetrievedChunks(keywordResults, vectorResults, metadataResults)
-	reranked := diversifyRetrievedChunks(expandParentChunks(ctx, s.db, merged), options.TopK)
+	reranked := rerankRetrievedChunks(ctx, s.db, merged, options.TopK)
 
 	result.MetadataResults = metadataResults
 	result.KeywordResults = keywordResults
@@ -74,14 +74,23 @@ func normalizeRetrievalOptions(options RetrievalOptions) RetrievalOptions {
 }
 
 func normalizeRetrievalFilter(filter RetrievalFilter) RetrievalFilter {
-	clean := make([]string, 0, len(filter.KnowledgeBaseIDs))
+	cleanBaseIDs := make([]string, 0, len(filter.KnowledgeBaseIDs))
 	for _, id := range filter.KnowledgeBaseIDs {
 		id = strings.TrimSpace(id)
 		if id != "" {
-			clean = append(clean, normalizeKnowledgeBaseID(id))
+			cleanBaseIDs = append(cleanBaseIDs, normalizeKnowledgeBaseID(id))
 		}
 	}
-	filter.KnowledgeBaseIDs = clean
+	filter.KnowledgeBaseIDs = cleanBaseIDs
+
+	cleanDocIDs := make([]string, 0, len(filter.DocIDs))
+	for _, id := range filter.DocIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			cleanDocIDs = append(cleanDocIDs, id)
+		}
+	}
+	filter.DocIDs = cleanDocIDs
 	return filter
 }
 
@@ -366,6 +375,18 @@ func expandParentChunks(ctx context.Context, db *sql.DB, chunks []RetrievedChunk
 		out = append(out, chunk)
 	}
 	return out
+}
+
+func rerankRetrievedChunks(ctx context.Context, db *sql.DB, chunks []RetrievedChunk, topK int) []RetrievedChunk {
+	expanded := expandParentChunks(ctx, db, chunks)
+	reranked := diversifyRetrievedChunks(expanded, topK)
+	for i := range reranked {
+		if reranked[i].Scores == nil {
+			reranked[i].Scores = map[string]float64{}
+		}
+		reranked[i].Scores["rerank_score"] = float64(len(reranked) - i)
+	}
+	return reranked
 }
 
 func fetchParentChunk(ctx context.Context, db *sql.DB, parentID string) (RetrievedChunk, bool) {
