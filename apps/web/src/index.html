@@ -45,12 +45,16 @@
             <div class="knowledgeToolbar">
               <div>
                 <h3>知识库</h3>
-                <p>已导入的知识文件</p>
+                <p>创建知识库后导入文件</p>
               </div>
+              <button id="createKnowledgeBase" class="knowledgeBaseAddButton" type="button">新建知识库</button>
               <button id="addKnowledge" class="knowledgeAddButton" type="button">添加</button>
               <input id="knowledgeFileInput" class="hidden" type="file" />
             </div>
-            <div id="knowledgeList" class="knowledgeList" aria-live="polite"></div>
+            <div class="knowledgeLayout">
+              <div id="knowledgeBaseList" class="knowledgeBaseList" aria-live="polite"></div>
+              <div id="knowledgeList" class="knowledgeList" aria-live="polite"></div>
+            </div>
           </div>
         </section>
 
