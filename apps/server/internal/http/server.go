@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 
@@ -44,11 +45,29 @@ type HTTPServer struct {
 }
 
 type knowledgeItemResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Size        int64  `json:"size"`
-	ContentType string `json:"contentType,omitempty"`
-	ImportedAt  string `json:"importedAt"`
+	ID              string `json:"id"`
+	KnowledgeBaseID string `json:"knowledgeBaseId,omitempty"`
+	Name            string `json:"name"`
+	Size            int64  `json:"size"`
+	ContentType     string `json:"contentType,omitempty"`
+	ImportedAt      string `json:"importedAt"`
+	Status          string `json:"status,omitempty"`
+	ChunkCount      int    `json:"chunkCount,omitempty"`
+	ChildChunks     int    `json:"childChunkCount,omitempty"`
+	ParentChunks    int    `json:"parentChunkCount,omitempty"`
+}
+
+type knowledgeBaseResponse struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	Status        string `json:"status"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
+	DocumentCount int    `json:"documentCount"`
+	ChunkCount    int    `json:"chunkCount"`
+	ChildChunks   int    `json:"childChunkCount"`
+	ParentChunks  int    `json:"parentChunkCount"`
 }
 
 type toolConfigItemResponse struct {
@@ -63,6 +82,7 @@ type toolConfigItemResponse struct {
 
 type modelConfigResponse struct {
 	ID             string         `json:"id"`
+	ModelType      string         `json:"modelType"`
 	Provider       string         `json:"provider"`
 	BaseURL        string         `json:"baseURL"`
 	Model          string         `json:"model"`
@@ -78,6 +98,7 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 	startupContext := claudecode.LoadStartupContext()
 	stateDB, err := statedb.Open(startupContext.StateDBPath())
 	if err != nil {
+		log.Printf("state database unavailable at %s: %v", startupContext.StateDBPath(), err)
 		stateDB = nil
 	}
 	stateStore := state.NewStore(stateDB)
@@ -88,6 +109,9 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 			startupContext.MCP.Servers = servers
 		}
 		_ = stateStore.SeedModelConfig(modelConfigRecordFromConfig("default", modelConfig))
+		if embeddingRecord, ok := embeddingModelConfigRecordFromEnv(); ok {
+			_ = stateStore.SeedModelConfig(embeddingRecord)
+		}
 		if record, ok, err := stateStore.ModelConfig("default"); err == nil && ok {
 			modelConfig = modelConfigFromRecord(record)
 		}
@@ -96,6 +120,8 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 	if stateDB != nil {
 		if persistentStore, err := memory.NewPersistentStoreWithDB(stateDB); err == nil {
 			store = persistentStore
+		} else {
+			log.Printf("persistent memory store unavailable: %v", err)
 		}
 	}
 	registry := runtime.NewRuntime()
@@ -108,8 +134,13 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 	if stateDB != nil {
 		skillConfig = skills.NewSQLiteConfigStore(skillRegistry, stateDB)
 	}
-	knowledgeStore, err := knowledge.NewStore(startupContext.KnowledgeDir())
+	knowledgeOptions := []knowledge.Option{}
+	if stateDB != nil {
+		knowledgeOptions = append(knowledgeOptions, knowledge.WithDB(stateDB))
+	}
+	knowledgeStore, err := knowledge.NewStoreWithOptions(startupContext.KnowledgeDir(), knowledgeOptions...)
 	if err != nil {
+		log.Printf("knowledge store unavailable at %s: %v", startupContext.KnowledgeDir(), err)
 		knowledgeStore, _ = knowledge.NewStore("")
 	}
 	tools.RegisterCoreCoder(registry)
@@ -117,6 +148,7 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 	tools.RegisterInteractiveWeb(registry)
 	mcp.RegisterConfiguredServers(context.Background(), registry, startupContext.MCP)
 	agent := agent.NewAgent(store, registry, model.NewOpenAICompatibleModel(modelConfig), skillRegistry, skillConfig, startupContext)
+	agent.SetKnowledgeStore(knowledgeStore)
 	registry.Register(tools.NewAgentTool(agent))
 	defaultConversationID := ""
 	if existing := store.ListConversations(); len(existing) > 0 {
@@ -125,7 +157,7 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 		defaultConversation := store.CreateConversation("New conversation")
 		defaultConversationID = defaultConversation.ID
 	}
-	return &HTTPServer{
+	httpServer := &HTTPServer{
 		store:                 store,
 		runtime:               registry,
 		skillRegistry:         skillRegistry,
@@ -138,6 +170,8 @@ func NewHTTPServer(staticDir string) *HTTPServer {
 		defaultConversationID: defaultConversationID,
 		staticDir:             staticDir,
 	}
+	_ = httpServer.configureKnowledgeEmbedding()
+	return httpServer
 }
 
 func skillDirs(dirs []claudecode.SkillDirectory) []skills.Directory {
@@ -172,8 +206,12 @@ func (s *HTTPServer) Register(h *server.Hertz) {
 	h.PUT("/api/skills/config", s.handleUpdateSkillConfig)
 	h.GET("/api/skills/:skillName", s.handleSkillDetail)
 	h.DELETE("/api/skills/:skillName", s.handleDeleteSkill)
+	h.GET("/api/knowledge-bases", s.handleKnowledgeBases)
+	h.POST("/api/knowledge-bases", s.handleCreateKnowledgeBase)
+	h.DELETE("/api/knowledge-bases/:knowledgeBaseId", s.handleDeleteKnowledgeBase)
 	h.GET("/api/knowledge", s.handleKnowledgeList)
 	h.POST("/api/knowledge/import", s.handleKnowledgeImport)
+	h.POST("/api/knowledge/search", s.handleKnowledgeSearch)
 	h.DELETE("/api/knowledge/:itemId", s.handleKnowledgeDelete)
 
 	h.GET("/", s.serveStaticFile("index.html"))
@@ -400,6 +438,7 @@ func (s *HTTPServer) handleDeleteModelConfig(ctx context.Context, c *app.Request
 func (s *HTTPServer) handleSaveModelConfig(c *app.RequestContext, configID string) {
 	var body struct {
 		ID             *string        `json:"id"`
+		ModelType      *string        `json:"modelType"`
 		Provider       *string        `json:"provider"`
 		APIKey         *string        `json:"apiKey"`
 		BaseURL        *string        `json:"baseURL"`
@@ -429,6 +468,12 @@ func (s *HTTPServer) handleSaveModelConfig(c *app.RequestContext, configID strin
 		record = existing
 	}
 	record.ID = configID
+	if body.ModelType != nil {
+		record.ModelType = *body.ModelType
+	}
+	if configID == "default" {
+		record.ModelType = "reasoning"
+	}
 	if body.Provider != nil {
 		record.Provider = *body.Provider
 	}
@@ -460,8 +505,13 @@ func (s *HTTPServer) handleSaveModelConfig(c *app.RequestContext, configID strin
 	} else if ok {
 		record = saved
 	}
-	if s.agent != nil && record.ID == "default" {
-		s.agent.SetModel(model.NewOpenAICompatibleModel(modelConfigFromRecord(record)))
+	if s.agent != nil && record.ID == "default" && record.ModelType == "reasoning" {
+		config := modelConfigFromRecord(record)
+		s.agent.SetModel(model.NewOpenAICompatibleModel(config))
+	}
+	if err := s.configureKnowledgeEmbedding(); err != nil {
+		writeHertzError(c, consts.StatusInternalServerError, err.Error())
+		return
 	}
 	c.JSON(consts.StatusOK, utils.H{"config": modelConfigResponseFromRecord(record)})
 }
@@ -677,12 +727,95 @@ func (s *HTTPServer) handleDeleteSkill(ctx context.Context, c *app.RequestContex
 	c.JSON(consts.StatusOK, utils.H{"skills": updated})
 }
 
+func (s *HTTPServer) handleKnowledgeBases(ctx context.Context, c *app.RequestContext) {
+	if s.knowledgeStore == nil {
+		writeHertzError(c, consts.StatusInternalServerError, "knowledge store is unavailable")
+		return
+	}
+	bases, err := s.knowledgeStore.ListKnowledgeBases(ctx)
+	if err != nil {
+		writeHertzError(c, consts.StatusInternalServerError, err.Error())
+		return
+	}
+	c.JSON(consts.StatusOK, utils.H{"knowledgeBases": knowledgeBaseResponses(bases)})
+}
+
+func (s *HTTPServer) handleCreateKnowledgeBase(ctx context.Context, c *app.RequestContext) {
+	if s.knowledgeStore == nil {
+		writeHertzError(c, consts.StatusInternalServerError, "knowledge store is unavailable")
+		return
+	}
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.BindJSON(&body); err != nil {
+		writeHertzError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	base, err := s.knowledgeStore.CreateKnowledgeBase(ctx, body.Name, body.Description)
+	if err != nil {
+		status := consts.StatusInternalServerError
+		if strings.Contains(err.Error(), "required") {
+			status = consts.StatusBadRequest
+		}
+		writeHertzError(c, status, err.Error())
+		return
+	}
+	bases, err := s.knowledgeStore.ListKnowledgeBases(ctx)
+	if err != nil {
+		writeHertzError(c, consts.StatusInternalServerError, err.Error())
+		return
+	}
+	items, err := s.knowledgeStore.ListByKnowledgeBase(ctx, base.ID)
+	if err != nil {
+		writeHertzError(c, consts.StatusInternalServerError, err.Error())
+		return
+	}
+	c.JSON(consts.StatusCreated, utils.H{
+		"knowledgeBase":  knowledgeBaseResponseFromRecord(base),
+		"knowledgeBases": knowledgeBaseResponses(bases),
+		"items":          knowledgeResponseItems(items),
+	})
+}
+
+func (s *HTTPServer) handleDeleteKnowledgeBase(ctx context.Context, c *app.RequestContext) {
+	if s.knowledgeStore == nil {
+		writeHertzError(c, consts.StatusInternalServerError, "knowledge store is unavailable")
+		return
+	}
+	id := strings.TrimSpace(c.Param("knowledgeBaseId"))
+	if id == "" {
+		writeHertzError(c, consts.StatusBadRequest, "knowledgeBaseId is required")
+		return
+	}
+	deleted, err := s.knowledgeStore.DeleteKnowledgeBase(ctx, id)
+	if err != nil {
+		status := consts.StatusInternalServerError
+		if strings.Contains(err.Error(), "cannot be deleted") {
+			status = consts.StatusBadRequest
+		}
+		writeHertzError(c, status, err.Error())
+		return
+	}
+	if !deleted {
+		writeHertzError(c, consts.StatusNotFound, "knowledge base not found")
+		return
+	}
+	bases, err := s.knowledgeStore.ListKnowledgeBases(ctx)
+	if err != nil {
+		writeHertzError(c, consts.StatusInternalServerError, err.Error())
+		return
+	}
+	c.JSON(consts.StatusOK, utils.H{"knowledgeBases": knowledgeBaseResponses(bases), "items": []knowledgeItemResponse{}})
+}
+
 func (s *HTTPServer) handleKnowledgeList(ctx context.Context, c *app.RequestContext) {
 	if s.knowledgeStore == nil {
 		writeHertzError(c, consts.StatusInternalServerError, "knowledge store is unavailable")
 		return
 	}
-	items, err := s.knowledgeStore.List()
+	items, err := s.knowledgeStore.ListByKnowledgeBase(ctx, strings.TrimSpace(c.Query("knowledgeBaseId")))
 	if err != nil {
 		writeHertzError(c, consts.StatusInternalServerError, err.Error())
 		return
@@ -706,7 +839,8 @@ func (s *HTTPServer) handleKnowledgeImport(ctx context.Context, c *app.RequestCo
 		return
 	}
 	defer file.Close()
-	item, err := s.knowledgeStore.Import(fileHeader.Filename, fileHeader.Header.Get("Content-Type"), file)
+	knowledgeBaseID := strings.TrimSpace(string(c.FormValue("knowledgeBaseId")))
+	item, err := s.knowledgeStore.ImportToKnowledgeBase(ctx, knowledgeBaseID, fileHeader.Filename, fileHeader.Header.Get("Content-Type"), file)
 	if err != nil {
 		status := consts.StatusInternalServerError
 		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "exceeds") {
@@ -715,12 +849,50 @@ func (s *HTTPServer) handleKnowledgeImport(ctx context.Context, c *app.RequestCo
 		writeHertzError(c, status, err.Error())
 		return
 	}
-	items, err := s.knowledgeStore.List()
+	items, err := s.knowledgeStore.ListByKnowledgeBase(ctx, item.KnowledgeBaseID)
 	if err != nil {
 		writeHertzError(c, consts.StatusInternalServerError, err.Error())
 		return
 	}
-	c.JSON(consts.StatusCreated, utils.H{"item": knowledgeResponseItem(item), "items": knowledgeResponseItems(items)})
+	bases, _ := s.knowledgeStore.ListKnowledgeBases(ctx)
+	c.JSON(consts.StatusCreated, utils.H{"item": knowledgeResponseItem(item), "items": knowledgeResponseItems(items), "knowledgeBases": knowledgeBaseResponses(bases)})
+}
+
+func (s *HTTPServer) handleKnowledgeSearch(ctx context.Context, c *app.RequestContext) {
+	if s.knowledgeStore == nil {
+		writeHertzError(c, consts.StatusInternalServerError, "knowledge store is unavailable")
+		return
+	}
+	var body struct {
+		Query            string         `json:"query"`
+		ConversationID   string         `json:"conversationId"`
+		KnowledgeBaseIDs []string       `json:"knowledgeBaseIds"`
+		DocIDs           []string       `json:"docIds"`
+		TopK             int            `json:"topK"`
+		Metadata         map[string]any `json:"metadata"`
+	}
+	if err := c.BindJSON(&body); err != nil {
+		writeHertzError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(body.Query) == "" {
+		writeHertzError(c, consts.StatusBadRequest, "query is required")
+		return
+	}
+	result, err := s.knowledgeStore.Retrieve(ctx, body.Query, knowledge.RetrievalOptions{
+		ConversationID: body.ConversationID,
+		TopK:           body.TopK,
+		Filter: knowledge.RetrievalFilter{
+			KnowledgeBaseIDs: body.KnowledgeBaseIDs,
+			DocIDs:           body.DocIDs,
+			Metadata:         body.Metadata,
+		},
+	})
+	if err != nil {
+		writeHertzError(c, consts.StatusInternalServerError, err.Error())
+		return
+	}
+	c.JSON(consts.StatusOK, utils.H{"result": result})
 }
 
 func (s *HTTPServer) handleKnowledgeDelete(ctx context.Context, c *app.RequestContext) {
@@ -742,12 +914,36 @@ func (s *HTTPServer) handleKnowledgeDelete(ctx context.Context, c *app.RequestCo
 		writeHertzError(c, consts.StatusNotFound, "knowledge item not found")
 		return
 	}
-	items, err := s.knowledgeStore.List()
+	items, err := s.knowledgeStore.ListByKnowledgeBase(ctx, strings.TrimSpace(c.Query("knowledgeBaseId")))
 	if err != nil {
 		writeHertzError(c, consts.StatusInternalServerError, err.Error())
 		return
 	}
-	c.JSON(consts.StatusOK, utils.H{"items": knowledgeResponseItems(items)})
+	bases, _ := s.knowledgeStore.ListKnowledgeBases(ctx)
+	c.JSON(consts.StatusOK, utils.H{"items": knowledgeResponseItems(items), "knowledgeBases": knowledgeBaseResponses(bases)})
+}
+
+func knowledgeBaseResponses(bases []knowledge.KnowledgeBase) []knowledgeBaseResponse {
+	out := make([]knowledgeBaseResponse, 0, len(bases))
+	for _, base := range bases {
+		out = append(out, knowledgeBaseResponseFromRecord(base))
+	}
+	return out
+}
+
+func knowledgeBaseResponseFromRecord(base knowledge.KnowledgeBase) knowledgeBaseResponse {
+	return knowledgeBaseResponse{
+		ID:            base.ID,
+		Name:          base.Name,
+		Description:   base.Description,
+		Status:        base.Status,
+		CreatedAt:     base.CreatedAt,
+		UpdatedAt:     base.UpdatedAt,
+		DocumentCount: base.DocumentCount,
+		ChunkCount:    base.ChunkCount,
+		ChildChunks:   base.ChildChunks,
+		ParentChunks:  base.ParentChunks,
+	}
 }
 
 func knowledgeResponseItems(items []knowledge.Item) []knowledgeItemResponse {
@@ -760,11 +956,16 @@ func knowledgeResponseItems(items []knowledge.Item) []knowledgeItemResponse {
 
 func knowledgeResponseItem(item knowledge.Item) knowledgeItemResponse {
 	return knowledgeItemResponse{
-		ID:          item.ID,
-		Name:        item.Name,
-		Size:        item.Size,
-		ContentType: item.ContentType,
-		ImportedAt:  item.ImportedAt,
+		ID:              item.ID,
+		KnowledgeBaseID: item.KnowledgeBaseID,
+		Name:            item.Name,
+		Size:            item.Size,
+		ContentType:     item.ContentType,
+		ImportedAt:      item.ImportedAt,
+		Status:          item.Status,
+		ChunkCount:      item.ChunkCount,
+		ChildChunks:     item.ChildChunks,
+		ParentChunks:    item.ParentChunks,
 	}
 }
 
@@ -819,10 +1020,45 @@ func (s *HTTPServer) currentModelConfigRecord() (state.ModelConfigRecord, error)
 	return defaultRecord, nil
 }
 
+func (s *HTTPServer) configureKnowledgeEmbedding() error {
+	if s == nil || s.knowledgeStore == nil {
+		return nil
+	}
+	if s.stateStore == nil || s.stateDB == nil {
+		s.knowledgeStore.SetEmbedder(nil)
+		s.knowledgeStore.SetVectorIndex(nil)
+		return nil
+	}
+	if embeddingRecord, ok := embeddingModelConfigRecordFromEnv(); ok {
+		if err := s.stateStore.SeedModelConfig(embeddingRecord); err != nil {
+			return err
+		}
+	}
+	record, ok, err := s.stateStore.FirstModelConfigByType("embedding")
+	if err != nil {
+		return err
+	}
+	if !ok {
+		s.knowledgeStore.SetEmbedder(nil)
+		s.knowledgeStore.SetVectorIndex(nil)
+		return nil
+	}
+	embedder := model.NewOpenAIEmbeddingClient(embeddingConfigFromRecord(record))
+	s.knowledgeStore.SetEmbedder(embedder)
+	if embedder == nil {
+		s.knowledgeStore.SetVectorIndex(nil)
+		return nil
+	}
+	s.knowledgeStore.SetVectorIndex(knowledge.NewSQLiteVecIndex(s.stateDB))
+	s.knowledgeStore.BackfillMissingVectorsAsync()
+	return nil
+}
+
 func modelConfigRecordFromConfig(id string, config model.Config) state.ModelConfigRecord {
 	config = model.NormalizeConfig(config)
 	return state.ModelConfigRecord{
 		ID:             id,
+		ModelType:      "reasoning",
 		Provider:       config.Provider,
 		APIKey:         config.APIKey,
 		BaseURL:        config.BaseURL,
@@ -831,6 +1067,24 @@ func modelConfigRecordFromConfig(id string, config model.Config) state.ModelConf
 		TimeoutSeconds: config.TimeoutSeconds,
 		Extra:          map[string]any{},
 	}
+}
+
+func embeddingModelConfigRecordFromEnv() (state.ModelConfigRecord, bool) {
+	config := model.DefaultEmbeddingConfigFromEnv()
+	if strings.TrimSpace(config.EmbeddingModel) == "" && strings.TrimSpace(config.APIKey) == "" {
+		return state.ModelConfigRecord{}, false
+	}
+	return state.ModelConfigRecord{
+		ID:             "default-embedding",
+		ModelType:      "embedding",
+		Provider:       config.Provider,
+		APIKey:         config.APIKey,
+		BaseURL:        config.BaseURL,
+		Model:          config.EmbeddingModel,
+		Temperature:    config.Temperature,
+		TimeoutSeconds: config.TimeoutSeconds,
+		Extra:          map[string]any{},
+	}, true
 }
 
 func modelConfigFromRecord(record state.ModelConfigRecord) model.Config {
@@ -844,9 +1098,22 @@ func modelConfigFromRecord(record state.ModelConfigRecord) model.Config {
 	})
 }
 
+func embeddingConfigFromRecord(record state.ModelConfigRecord) model.Config {
+	return model.NormalizeConfig(model.Config{
+		Provider:       record.Provider,
+		APIKey:         record.APIKey,
+		BaseURL:        record.BaseURL,
+		Model:          record.Model,
+		EmbeddingModel: record.Model,
+		Temperature:    record.Temperature,
+		TimeoutSeconds: record.TimeoutSeconds,
+	})
+}
+
 func modelConfigResponseFromRecord(record state.ModelConfigRecord) modelConfigResponse {
 	return modelConfigResponse{
 		ID:             record.ID,
+		ModelType:      record.ModelType,
 		Provider:       record.Provider,
 		BaseURL:        record.BaseURL,
 		Model:          record.Model,
@@ -887,6 +1154,9 @@ func (s *HTTPServer) modelClientForRequest(configID string) (model.Client, error
 		record = loaded
 	} else if configID != "default" {
 		return nil, fmt.Errorf("model config %q not found", configID)
+	}
+	if record.ModelType != "reasoning" {
+		return nil, fmt.Errorf("model config %q is an embedding model and cannot be used for chat", configID)
 	}
 	return model.NewOpenAICompatibleModel(modelConfigFromRecord(record)), nil
 }
