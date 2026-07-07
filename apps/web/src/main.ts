@@ -739,7 +739,7 @@ async function deleteConversation(id: string): Promise<void> {
 
 async function loadMessages(): Promise<void> {
   if (!activeConversationId) {
-    messagesEl.innerHTML = `<div class="emptyState">No conversation selected.</div>`;
+    messagesEl.innerHTML = `<div class="emptyState">请选择一个会话。</div>`;
     conversationTitleEl.textContent = "Conversation";
     setEmptyChat(true);
     return;
@@ -1116,7 +1116,7 @@ function renderSkills(): void {
     return;
   }
   if (availableSkills.length === 0) {
-    skillListEl.innerHTML = `<div class="emptyState compact">No skills.</div>`;
+    skillListEl.innerHTML = `<div class="emptyState compact">暂无技能。</div>`;
     return;
   }
   const query = skillSearchEl.value.trim().toLowerCase();
@@ -1159,7 +1159,7 @@ function renderSkills(): void {
     titleRow.append(name, meta);
     const description = document.createElement("span");
     description.className = "skillDescription";
-    description.textContent = skill.purpose || skill.description || "No purpose";
+    description.textContent = skill.purpose || skill.description || "暂无说明";
     info.append(titleRow, description, renderSkillTriggerPills(skill.triggers));
 
     const actions = document.createElement("div");
@@ -1234,7 +1234,7 @@ function renderKnowledge(): void {
     text.textContent = "知识库操作失败：" + knowledgeLoadError;
     const retry = document.createElement("button");
     retry.type = "button";
-    retry.textContent = "Retry";
+    retry.textContent = "重试";
     retry.disabled = isStreaming || isKnowledgeImporting;
     retry.addEventListener("click", async () => {
       try {
@@ -1378,16 +1378,21 @@ function renderRagKnowledgeSelector(): void {
 
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = "不选择知识库";
+  empty.textContent = "不使用知识库";
   ragKnowledgeSelectorEl.appendChild(empty);
 
+  const group = document.createElement("optgroup");
+  group.label = "知识库";
   for (const base of knowledgeBases) {
     const option = document.createElement("option");
     option.value = base.id;
     const hasContent = (base.childChunkCount ?? 0) > 0;
     const meta = hasContent ? `${base.documentCount || 0} docs` : "空";
     option.textContent = `${base.name || "Untitled"} · ${meta}`;
-    ragKnowledgeSelectorEl.appendChild(option);
+    group.appendChild(option);
+  }
+  if (group.children.length > 0) {
+    ragKnowledgeSelectorEl.appendChild(group);
   }
 
   ragKnowledgeSelectorEl.value = activeRagKnowledgeBaseId;
@@ -1403,7 +1408,7 @@ function createActionMenu(label: string, items: ActionMenuItem[]): HTMLElement {
   const trigger = document.createElement("button");
   trigger.type = "button";
   trigger.className = "actionMenuButton";
-  trigger.textContent = "...";
+  trigger.textContent = "⋯";
   trigger.setAttribute("aria-label", label);
   trigger.disabled = items.every((item) => item.disabled);
 
@@ -1449,16 +1454,19 @@ function renderModelSelector(): void {
     return;
   }
   normalizeModelSelection();
+  const group = document.createElement("optgroup");
+  group.label = "推理模型";
   for (const config of reasoningConfigs) {
     const primaryOption = document.createElement("option");
     primaryOption.value = config.id;
     primaryOption.textContent = modelConfigLabel(config);
-    primaryModelSelectorEl.appendChild(primaryOption);
+    group.appendChild(primaryOption);
   }
+  primaryModelSelectorEl.appendChild(group);
   primaryModelSelectorEl.value = activeModelConfigId;
   renderMultiModelPopover(reasoningConfigs);
   const selectedModels = selectedReasoningModelConfigIds();
-  multiModelToggleEl.textContent = selectedModels.length > 1 ? `多模型回答 · ${selectedModels.length} 个模型` : "开启多模型回答";
+  multiModelToggleEl.textContent = selectedModels.length > 1 ? `多模型 · ${selectedModels.length}` : "多模型";
   multiModelToggleEl.classList.toggle("active", selectedModels.length > 1);
   multiModelToggleEl.setAttribute("aria-expanded", String(multiModelPopoverOpen));
   multiModelPopoverEl.classList.toggle("hidden", !multiModelPopoverOpen);
@@ -1469,6 +1477,17 @@ function renderModelSelector(): void {
 
 function renderMultiModelPopover(reasoningConfigs: ModelConfig[]): void {
   const candidates = reasoningConfigs.filter((config) => config.id !== activeModelConfigId);
+  const primary = document.createElement("div");
+  primary.className = "multiModelGroup";
+  const primaryTitle = document.createElement("div");
+  primaryTitle.className = "multiModelGroupTitle";
+  primaryTitle.textContent = "主模型";
+  const primaryValue = document.createElement("div");
+  primaryValue.className = "multiModelPrimary";
+  primaryValue.textContent = modelDisplayName(activeModelConfigId);
+  primary.append(primaryTitle, primaryValue);
+  multiModelPopoverEl.appendChild(primary);
+
   if (candidates.length === 0) {
     const empty = document.createElement("div");
     empty.className = "multiModelEmpty";
@@ -1478,8 +1497,8 @@ function renderMultiModelPopover(reasoningConfigs: ModelConfig[]): void {
   }
 
   const title = document.createElement("div");
-  title.className = "multiModelPopoverTitle";
-  title.textContent = "选择副模型（最多 2 个）";
+  title.className = "multiModelGroupTitle";
+  title.textContent = "副模型（最多 2 个）";
   multiModelPopoverEl.appendChild(title);
 
   for (const config of candidates) {
@@ -1564,7 +1583,7 @@ function renderModelConfigs(): void {
     text.textContent = "模型配置加载失败：" + modelLoadError;
     const retry = document.createElement("button");
     retry.type = "button";
-    retry.textContent = "Retry";
+    retry.textContent = "重试";
     retry.disabled = isStreaming;
     retry.addEventListener("click", async () => {
       try {
@@ -2161,7 +2180,7 @@ function renderMessages(messages: Message[]): void {
   messagesEl.innerHTML = "";
   setEmptyChat(messages.length === 0);
   if (messages.length === 0) {
-    messagesEl.innerHTML = `<div class="emptyState"><div class="emptyTitle">What can I help with?</div><div class="emptyHint">Start a conversation or use / to choose a skill.</div></div>`;
+    messagesEl.innerHTML = `<div class="emptyState"><div class="emptyTitle">今天想做什么？</div><div class="emptyHint">开始对话，或输入 / 选择一个技能。</div></div>`;
     renderMessageLocator();
     return;
   }
@@ -2606,9 +2625,9 @@ function attachAnswerSourceButton(container: HTMLElement, getContent: () => stri
   const button = document.createElement("button");
   button.type = "button";
   button.className = "answerSourceButton";
-  button.textContent = "<>";
-  button.setAttribute("aria-label", "查看原始回答内容");
-  button.setAttribute("title", "查看回答内容");
+  button.textContent = "MD";
+  button.setAttribute("aria-label", "查看 Markdown 原文");
+  button.setAttribute("title", "查看 Markdown 原文");
   button.addEventListener("click", (event) => {
     event.stopPropagation();
     openSourceDialog(title, getContent());
@@ -2622,9 +2641,9 @@ function openSourceDialog(title: string, content: string): void {
   renderMarkdown(preview, content || "(empty response)");
   openAppModal({
     title,
-    description: "Markdown 内容",
+    description: "Markdown 格式预览",
     body: preview,
-    size: "wide",
+    size: "source",
     actions: [
       { label: "关闭", variant: "secondary", onClick: () => closeAppModal(false) }
     ]
@@ -2637,12 +2656,12 @@ function openAppModal(options: {
   body?: HTMLElement;
   actions?: ModalAction[];
   onCancel?: () => void;
-  size?: "default" | "wide";
+  size?: "default" | "wide" | "source";
 }): void {
   closeAppModal(false);
   modalCancelHandler = options.onCancel || null;
   modalRootEl.innerHTML = "";
-  modalRootEl.className = `modalRoot${options.size === "wide" ? " wide" : ""}`;
+  modalRootEl.className = `modalRoot${options.size === "wide" ? " wide" : ""}${options.size === "source" ? " sourceWide" : ""}`;
   document.body.classList.add("modalOpen");
 
   const backdrop = document.createElement("div");
@@ -2654,6 +2673,14 @@ function openAppModal(options: {
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
   dialog.setAttribute("aria-label", options.title);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "modalCloseButton";
+  closeButton.textContent = "×";
+  closeButton.setAttribute("aria-label", "关闭弹窗");
+  closeButton.addEventListener("click", () => closeAppModal(true));
+  dialog.appendChild(closeButton);
 
   const header = document.createElement("div");
   header.className = "modalHeader";
@@ -2674,10 +2701,11 @@ function openAppModal(options: {
 
   dialog.append(header, content);
 
-  if (options.actions?.length) {
+  const actions = options.actions?.length === 1 && options.actions[0]?.label === "关闭" ? [] : options.actions || [];
+  if (actions.length) {
     const footer = document.createElement("div");
     footer.className = "modalFooter";
-    for (const action of options.actions) {
+    for (const action of actions) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `modalAction ${action.variant || "secondary"}`;
@@ -2704,7 +2732,7 @@ function openAppModal(options: {
 
   modalRootEl.append(backdrop, dialog);
   window.setTimeout(() => {
-    dialog.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+    dialog.querySelector<HTMLElement>("input, select, textarea, .modalAction, .modalCloseButton")?.focus();
   }, 0);
 }
 

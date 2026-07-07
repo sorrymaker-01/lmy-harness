@@ -3332,3 +3332,1845 @@ body {
     min-height: 38px;
   }
 }
+
+/* Apple-style product surface */
+:root {
+  --apple-text: #1d1d1f;
+  --apple-muted: #6e6e73;
+  --apple-tertiary: #86868b;
+  --apple-bg: #f5f5f7;
+  --apple-nav: rgb(251 251 253 / 84%);
+  --apple-surface: #fff;
+  --apple-surface-soft: #fbfbfd;
+  --apple-border: rgb(0 0 0 / 10%);
+  --apple-border-strong: rgb(0 0 0 / 18%);
+  --apple-blue: #0071e3;
+  --apple-blue-hover: #0077ed;
+  --apple-link: #06c;
+  --apple-danger: #b42318;
+  --apple-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 30px rgb(0 0 0 / 6%);
+  --apple-focus: 0 0 0 4px rgb(0 113 227 / 18%);
+}
+
+html {
+  background: var(--apple-bg);
+  scrollbar-color: rgb(0 0 0 / 24%) transparent;
+}
+
+body {
+  min-width: 320px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0;
+  color: var(--apple-text);
+  background: var(--apple-bg);
+}
+
+body::selection {
+  background: rgb(0 113 227 / 18%);
+  color: var(--apple-text);
+}
+
+button,
+textarea,
+input,
+select,
+summary {
+  font-family: inherit;
+  letter-spacing: 0;
+}
+
+button {
+  border-radius: 999px;
+}
+
+button:focus-visible,
+textarea:focus,
+input:focus,
+select:focus,
+summary:focus-visible {
+  outline: 0;
+  box-shadow: var(--apple-focus);
+}
+
+.sidebar::before,
+.sidebar::after,
+.newChatButton::after,
+.sidebarNavButton::after,
+.answerPanel::before,
+.message.streaming .panelHeader::after,
+.multiModelCard.streaming::before,
+h1::before {
+  display: none;
+  content: none;
+}
+
+.shell {
+  grid-template-columns: 280px minmax(0, 1fr);
+  background: var(--apple-bg);
+}
+
+.shell.sidebarCollapsed {
+  grid-template-columns: 54px minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  border-right: 1px solid var(--apple-border);
+  color: var(--apple-text);
+  background: var(--apple-nav);
+  box-shadow: none;
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.sidebarHeader,
+.sidebarPanel {
+  position: relative;
+  z-index: 1;
+}
+
+.sidebarHeader {
+  gap: 8px;
+  padding: 54px 14px 12px;
+}
+
+h1 {
+  display: block;
+  margin: 0 0 6px;
+  padding: 0 2px 12px;
+  border-bottom: 1px solid var(--apple-border);
+  color: var(--apple-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+h2 {
+  max-width: min(680px, 72vw);
+  color: var(--apple-text);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.14;
+}
+
+.eyebrow {
+  color: var(--apple-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  text-transform: none;
+}
+
+.newChatButton,
+.knowledgeBaseAddButton,
+.knowledgeAddButton,
+.modelAddButton,
+.composer > button,
+.modalAction.primary {
+  border: 0;
+  background: var(--apple-blue);
+  color: #fff;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.newChatButton:hover,
+.knowledgeBaseAddButton:hover,
+.knowledgeAddButton:hover,
+.modelAddButton:hover,
+.composer > button:hover,
+.modalAction.primary:hover {
+  background: var(--apple-blue-hover);
+  transform: none;
+}
+
+.newChatButton {
+  min-height: 38px;
+  margin: 0 0 6px;
+  padding: 0 18px;
+  text-align: center;
+}
+
+.sidebarNavButton {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--apple-text);
+  padding: 0 10px;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.sidebarNavButton:hover,
+.sidebarNavButton.active {
+  background: rgb(0 0 0 / 6%);
+  color: var(--apple-text);
+  transform: none;
+  box-shadow: none;
+}
+
+.sidebarPanel {
+  padding: 0 8px 14px;
+}
+
+.conversationList {
+  gap: 1px;
+}
+
+.conversationItem {
+  border: 0;
+  border-radius: 8px;
+}
+
+.conversationItem:hover,
+.conversationItem.active {
+  border-color: transparent;
+  background: rgb(0 0 0 / 6%);
+  box-shadow: none;
+}
+
+.conversationButton {
+  min-height: 40px;
+  border-radius: 8px;
+  color: var(--apple-text);
+  padding: 8px 10px;
+}
+
+.conversationTitle {
+  color: var(--apple-text);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.conversationMeta {
+  margin-top: 2px;
+  color: var(--apple-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.conversationDeleteButton {
+  color: var(--apple-tertiary);
+}
+
+.conversationDeleteButton:hover {
+  background: rgb(0 0 0 / 8%);
+  color: var(--apple-text);
+}
+
+.sidebarToggle {
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 6%);
+  color: var(--apple-text);
+}
+
+.sidebarToggle:hover {
+  border-color: transparent;
+  background: rgb(0 0 0 / 10%);
+}
+
+.sidebarToggleTip {
+  border: 0;
+  border-radius: 8px;
+  background: rgb(29 29 31 / 92%);
+  color: #f5f5f7;
+  box-shadow: var(--apple-shadow);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.chatPane,
+.chatHeader,
+.messages {
+  background: var(--apple-bg);
+}
+
+.chatHeader {
+  height: 44px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--apple-border);
+  background: var(--apple-nav);
+  box-shadow: none;
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.messages {
+  padding: 36px 24px 28px;
+  scrollbar-color: rgb(0 0 0 / 24%) transparent;
+}
+
+.skillPage,
+.knowledgePage,
+.modelPage {
+  padding: clamp(34px, 5vw, 62px) clamp(20px, 4vw, 56px);
+  background: var(--apple-bg);
+}
+
+.skillShell,
+.knowledgeShell,
+.modelShell {
+  width: min(1080px, 100%);
+}
+
+.skillToolbar,
+.knowledgeToolbar,
+.modelToolbar {
+  align-items: end;
+  gap: 18px;
+  margin-bottom: 18px;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.knowledgeToolbar h3,
+.modelToolbar h3 {
+  color: var(--apple-text);
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 600;
+  line-height: 1.08;
+}
+
+.knowledgeToolbar p,
+.modelToolbar p {
+  margin-top: 6px;
+  color: var(--apple-muted);
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.skillSearchInput,
+.modelField input,
+.modelField select,
+.modalField input,
+textarea,
+.modelSelector,
+.knowledgeSelector {
+  border: 1px solid var(--apple-border);
+  background: var(--apple-surface);
+  color: var(--apple-text);
+  box-shadow: none;
+}
+
+.skillSearchInput {
+  min-height: 38px;
+  border-radius: 999px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+.skillSearchInput:focus,
+textarea:focus,
+.modelField input:focus,
+.modelField select:focus,
+.modalField input:focus,
+.modelSelector:focus,
+.knowledgeSelector:focus,
+.multiModelToggle:focus {
+  border-color: var(--apple-blue);
+  background: #fff;
+  box-shadow: var(--apple-focus);
+}
+
+.skillList,
+.knowledgeBaseList,
+.knowledgeList,
+.modelConfigList {
+  gap: 12px;
+}
+
+.skillListItem,
+.knowledgeBaseItem,
+.knowledgeItem,
+.modelConfigItem,
+.modelConfigEditor,
+.answerPanel,
+.multiModelCard,
+.skillMetadataItem,
+.modelConfigDetailItem,
+.sourcePreviewMarkdown {
+  border: 1px solid var(--apple-border);
+  border-radius: 8px;
+  background: var(--apple-surface);
+  box-shadow: none;
+}
+
+.skillListItem,
+.knowledgeItem,
+.modelConfigItem,
+.modelConfigEditor,
+.multiModelCard {
+  padding: 16px;
+}
+
+.skillListItem:hover,
+.knowledgeBaseItem:hover,
+.knowledgeItem:hover,
+.modelConfigItem:hover,
+.multiModelCard.selectable:hover {
+  border-color: var(--apple-border-strong);
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  transform: none;
+}
+
+.knowledgeBaseItem.active,
+.modelConfigItem.active,
+.multiModelCard.canonical {
+  border-color: rgb(0 113 227 / 44%);
+  background: #fff;
+  box-shadow: inset 3px 0 0 var(--apple-blue);
+}
+
+.multiModelCard.muted {
+  background: #f9f9fb;
+  opacity: 0.72;
+}
+
+.multiModelCard.failed {
+  border-color: rgb(180 35 24 / 30%);
+  background: #fff7f6;
+}
+
+.skillAvatar,
+.knowledgeIcon {
+  border: 1px solid var(--apple-border);
+  border-radius: 8px;
+  background: var(--apple-bg);
+  color: var(--apple-text);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.skillName,
+.slashName {
+  color: var(--apple-text);
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.skillDescription,
+.knowledgeBaseMeta,
+.knowledgeMeta,
+.modelConfigMeta,
+.skillDetailLine,
+.traceBody,
+.messageMeta {
+  color: var(--apple-muted);
+}
+
+.skillStatus,
+.modelConfigStatus,
+.skillTrigger,
+.multiModelStatus {
+  border: 0;
+  border-radius: 999px;
+  background: var(--apple-bg);
+  color: var(--apple-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.skillStatus.enabled,
+.modelConfigStatus.ready {
+  background: rgb(0 113 227 / 10%);
+  color: var(--apple-link);
+}
+
+.skillStatus.disabled,
+.modelConfigStatus.missing {
+  background: rgb(0 0 0 / 5%);
+  color: var(--apple-muted);
+}
+
+.skillSwitchTrack {
+  border: 0;
+  background: #d2d2d7;
+}
+
+.skillSwitch input:checked + .skillSwitchTrack {
+  border-color: transparent;
+  background: #34c759;
+}
+
+.skillSwitch input:focus-visible + .skillSwitchTrack {
+  outline: 0;
+  box-shadow: var(--apple-focus);
+}
+
+.modelConfigActions button,
+.modelEditorActions button,
+.skillRowActions button:not(.skillDeleteButton),
+.knowledgeDeleteButton,
+.knowledgeBaseDeleteButton,
+.modalAction,
+.actionMenuItem {
+  border: 1px solid var(--apple-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--apple-text);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.modelConfigActions button:hover,
+.modelEditorActions button:hover,
+.skillRowActions button:not(.skillDeleteButton):hover,
+.modalAction:hover,
+.actionMenuItem:hover {
+  border-color: var(--apple-border-strong);
+  background: #f5f5f7;
+  transform: none;
+}
+
+.skillDeleteButton,
+.actionMenuButton,
+.answerSourceButton {
+  border-radius: 999px;
+}
+
+.skillDeleteButton:hover,
+.knowledgeDeleteButton:hover,
+.knowledgeBaseDeleteButton:hover,
+.actionMenuItem.danger:hover {
+  border-color: rgb(180 35 24 / 24%);
+  background: #fff7f6;
+  color: var(--apple-danger);
+}
+
+.message {
+  animation: none;
+}
+
+.emptyChat .emptyState {
+  transform: none;
+}
+
+.emptyState {
+  color: var(--apple-muted);
+  animation: none;
+}
+
+.emptyTitle {
+  color: var(--apple-text);
+  font-size: clamp(42px, 6.6vw, 64px);
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.emptyHint {
+  margin-top: 12px;
+  color: var(--apple-muted);
+  font-size: 19px;
+  line-height: 1.38;
+}
+
+.emptyState.compact {
+  color: var(--apple-muted);
+  font-size: 13px;
+}
+
+.message.user {
+  max-width: min(920px, calc(100% - 56px));
+  margin-right: max(24px, calc((100% - 1040px) / 2));
+}
+
+.message.user .messageContent {
+  border: 0;
+  border-radius: 20px;
+  background: var(--apple-blue);
+  color: #fff;
+  box-shadow: none;
+}
+
+.message.assistant:not(.multiModelMessage) {
+  max-width: min(860px, calc(100% - 96px));
+  margin-left: max(32px, calc((100% - 1040px) / 2));
+}
+
+.message.assistant .messageContent,
+.answerContent {
+  color: var(--apple-text);
+}
+
+.message.assistant .messageContent {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.messageContent,
+.answerContent {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.messageContent h1,
+.answerContent h1,
+.messageContent h2,
+.answerContent h2,
+.messageContent h3,
+.answerContent h3,
+.messageContent h4,
+.answerContent h4,
+.messageContent h5,
+.answerContent h5,
+.messageContent h6,
+.answerContent h6 {
+  color: var(--apple-text);
+  font-weight: 600;
+}
+
+.messageContent a,
+.answerContent a {
+  color: var(--apple-link);
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.messageContent a:hover,
+.answerContent a:hover {
+  text-decoration: underline;
+}
+
+.messageContent code,
+.answerContent code {
+  border: 0;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 5%);
+  color: var(--apple-text);
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.messageContent pre,
+.answerContent pre,
+.skillInstructions,
+.sourcePreview {
+  border: 0;
+  border-radius: 8px;
+  background: #1d1d1f;
+  color: #f5f5f7;
+  box-shadow: none;
+}
+
+.messageContent blockquote,
+.answerContent blockquote {
+  border-left-color: var(--apple-border-strong);
+  background: var(--apple-surface-soft);
+  color: var(--apple-muted);
+}
+
+.messageContent .tableScroller,
+.answerContent .tableScroller {
+  border-color: var(--apple-border);
+  border-radius: 8px;
+}
+
+.messageContent th,
+.answerContent th {
+  background: var(--apple-bg);
+  color: var(--apple-text);
+  font-weight: 600;
+}
+
+.thinkingPanel {
+  color: var(--apple-muted);
+}
+
+.panelHeader {
+  border-radius: 999px;
+  color: var(--apple-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.answerPanel {
+  padding: 16px 18px;
+}
+
+.sourceCapable {
+  margin-top: 24px;
+  padding-top: 0;
+}
+
+.answerSourceButton {
+  top: -26px;
+  left: 0;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: var(--apple-link);
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 1;
+}
+
+.answerSourceButton:hover {
+  background: transparent;
+  color: var(--apple-link);
+  text-decoration: underline;
+  transform: none;
+}
+
+.multiModelTip {
+  border: 0;
+  background: transparent;
+  color: var(--apple-muted);
+  box-shadow: none;
+  padding: 0 0 10px;
+}
+
+.multiModelCardHeader {
+  border-bottom-color: var(--apple-border);
+}
+
+.multiModelStatus {
+  background: var(--apple-bg);
+}
+
+.composer {
+  grid-template-columns: minmax(0, 1fr) 74px;
+  gap: 12px;
+  width: min(860px, calc(100% - 40px));
+  padding: 16px 0 24px;
+}
+
+.emptyChat .composer {
+  width: min(760px, calc(100% - 56px));
+  transform: translateY(32px);
+}
+
+textarea {
+  min-height: 56px;
+  height: 56px;
+  max-height: 150px;
+  resize: vertical;
+  border-radius: 22px;
+  padding: 14px 17px;
+  line-height: 1.45;
+  font-size: 15px;
+}
+
+textarea::placeholder {
+  color: var(--apple-tertiary);
+}
+
+.composer > button {
+  width: 74px;
+  min-height: 44px;
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+.composerControls {
+  grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, auto);
+  gap: 8px;
+  padding: 0;
+}
+
+.composerControlGroup {
+  min-height: 44px;
+  border: 1px solid var(--apple-border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.composerControlGroup > span,
+.modelField span,
+.modalField span,
+.modalDialog .modelConfigDetailItem span,
+.modalDialog .skillMetadataItem span {
+  color: var(--apple-muted);
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.modelSelector,
+.knowledgeSelector {
+  min-height: 24px;
+  background-color: #fff;
+  color: var(--apple-text);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.modelSelector:not(:disabled):hover,
+.knowledgeSelector:not(:disabled):hover,
+.multiModelToggle:not(:disabled):hover,
+.multiModelToggle.active {
+  border-color: var(--apple-border-strong);
+  background: #fff;
+  color: var(--apple-text);
+}
+
+.multiModelToggle {
+  min-height: 44px;
+  border: 1px solid var(--apple-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--apple-text);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.multiModelToggle.active {
+  box-shadow: inset 3px 0 0 var(--apple-blue);
+}
+
+.modelModeHint {
+  color: var(--apple-muted);
+  font-size: 12px;
+}
+
+.multiModelPopover,
+.slashMenu,
+.actionMenuPopover {
+  border: 1px solid var(--apple-border);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 88%);
+  box-shadow: var(--apple-shadow);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.slashItem,
+.composer .slashItem {
+  border-left: 0;
+  border-bottom: 1px solid var(--apple-border);
+  background: transparent;
+  color: var(--apple-text);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.slashItem:hover,
+.slashItem.active,
+.composer .slashItem:hover,
+.composer .slashItem.active,
+.multiModelOption:hover {
+  border-left-color: transparent;
+  background: rgb(0 0 0 / 5%);
+}
+
+.actionMenuButton {
+  border: 0;
+  background: transparent;
+  color: var(--apple-muted);
+  box-shadow: none;
+}
+
+.actionMenuButton:hover,
+.actionMenu:focus-within .actionMenuButton {
+  background: rgb(0 0 0 / 6%);
+  color: var(--apple-text);
+}
+
+.modalBackdrop {
+  background: rgb(245 245 247 / 58%);
+  backdrop-filter: saturate(180%) blur(16px);
+}
+
+.modalDialog {
+  border: 1px solid var(--apple-border);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 18%);
+  backdrop-filter: saturate(180%) blur(24px);
+}
+
+.modalHeader h3 {
+  color: var(--apple-text);
+  font-size: 21px;
+  font-weight: 600;
+}
+
+.modalHeader p {
+  color: var(--apple-muted);
+}
+
+.modalFooter {
+  border-top-color: var(--apple-border);
+}
+
+.modalAction.danger {
+  border-color: var(--apple-danger);
+  background: var(--apple-danger);
+  color: #fff;
+}
+
+.modalDialog .modelConfigEditor {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.modalDialog .modelConfigDetailItem,
+.modalDialog .skillMetadataItem {
+  border: 1px solid var(--apple-border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.modalDialog .modelConfigDetailItem::before,
+.modalDialog .skillMetadataItem::before {
+  display: none;
+  content: none;
+}
+
+.modalDialog .modelConfigDetailItem strong,
+.modalDialog .skillMetadataItem strong {
+  color: var(--apple-text);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.modalDialog .modelField input,
+.modalDialog .modelField select,
+.modalField input {
+  border-color: var(--apple-border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.messageLocator {
+  border-color: var(--apple-border);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 76%);
+  box-shadow: var(--apple-shadow);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.messageLocatorItem {
+  border-radius: 999px;
+  color: var(--apple-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.messageLocatorItem.user {
+  color: var(--apple-text);
+}
+
+.messageLocatorItem:hover {
+  background: rgb(0 0 0 / 6%);
+  color: var(--apple-text);
+}
+
+.loadingDots {
+  filter: none;
+  background:
+    radial-gradient(circle closest-side, var(--apple-muted) 90%, transparent) 0 50% / 6px 6px no-repeat,
+    radial-gradient(circle closest-side, var(--apple-muted) 90%, transparent) 50% 50% / 6px 6px no-repeat,
+    radial-gradient(circle closest-side, var(--apple-muted) 90%, transparent) 100% 50% / 6px 6px no-repeat;
+}
+
+@media (max-width: 820px) {
+  .shell,
+  .shell.sidebarCollapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: relative;
+    height: auto;
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--apple-border);
+  }
+
+  .sidebarHeader {
+    padding: 52px 14px 12px;
+  }
+
+  .sidebarPanel {
+    max-height: 180px;
+  }
+
+  .shell.sidebarCollapsed .sidebar {
+    min-height: 52px;
+  }
+
+  .chatHeader {
+    padding: 0 16px;
+  }
+
+  h2 {
+    max-width: 62vw;
+    font-size: 18px;
+  }
+
+  .messages {
+    padding: 24px 12px;
+  }
+
+  .message.user,
+  .message.assistant:not(.multiModelMessage),
+  .message.multiModelMessage,
+  .shell.sidebarCollapsed .message.user,
+  .shell.sidebarCollapsed .message.assistant:not(.multiModelMessage),
+  .shell.sidebarCollapsed .message.multiModelMessage {
+    max-width: calc(100% - 24px);
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  .composer,
+  .emptyChat .composer {
+    grid-template-columns: 1fr;
+    width: calc(100% - 24px);
+    transform: none;
+  }
+
+  .composer > button {
+    width: 100%;
+  }
+
+  .composerControls {
+    grid-template-columns: 1fr;
+  }
+
+  .knowledgeToolbar,
+  .modelToolbar,
+  .skillToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .knowledgeToolbar h3,
+  .modelToolbar h3 {
+    font-size: 34px;
+  }
+
+  .knowledgeLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .messageLocator {
+    display: none;
+  }
+}
+
+/* Monochrome background pass: keep Apple typography and sizing, restore the prior black/white/gray atmosphere. */
+:root {
+  --apple-bg: #f7f7f5;
+  --apple-nav: rgb(247 247 245 / 82%);
+  --apple-blue: #1d1d1f;
+  --apple-blue-hover: #303236;
+  --apple-link: #111;
+  --apple-focus: 0 0 0 4px rgb(29 29 31 / 13%);
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 78%) 0, rgb(255 255 255 / 0%) 280px),
+    repeating-linear-gradient(90deg, rgb(0 0 0 / 0%) 0 31px, rgb(0 0 0 / 2.5%) 31px 32px),
+    repeating-linear-gradient(180deg, rgb(0 0 0 / 0%) 0 31px, rgb(0 0 0 / 1.8%) 31px 32px),
+    #f3f3ef;
+}
+
+body::selection {
+  background: #222;
+  color: #fff;
+}
+
+.shell,
+.chatPane,
+.chatHeader,
+.messages,
+.skillPage,
+.knowledgePage,
+.modelPage {
+  background: transparent;
+}
+
+.sidebar {
+  border-right: 1px solid rgb(255 255 255 / 8%);
+  color: #ececec;
+  background:
+    linear-gradient(180deg, #191919 0%, #101010 56%, #090909 100%);
+  box-shadow: 10px 0 34px rgb(0 0 0 / 12%);
+}
+
+.sidebar::before {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 7%), transparent 18%, transparent 82%, rgb(255 255 255 / 4%)),
+    repeating-linear-gradient(180deg, rgb(255 255 255 / 3%) 0 1px, transparent 1px 18px);
+  content: "";
+  opacity: 0.35;
+}
+
+.sidebar h1 {
+  border-bottom-color: rgb(255 255 255 / 7%);
+  color: #f7f7f7;
+}
+
+.newChatButton,
+.sidebarNavButton {
+  border: 1px solid rgb(255 255 255 / 7%);
+  background: rgb(255 255 255 / 5%);
+  color: #efefef;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.newChatButton {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 12%), rgb(255 255 255 / 5%)),
+    #181818;
+}
+
+.newChatButton:hover,
+.sidebarNavButton:hover,
+.sidebarNavButton.active {
+  border-color: rgb(255 255 255 / 13%);
+  background: rgb(255 255 255 / 10%);
+  color: #fff;
+}
+
+.conversationItem:hover,
+.conversationItem.active {
+  background: rgb(255 255 255 / 7%);
+}
+
+.conversationButton,
+.conversationTitle {
+  color: #ececec;
+}
+
+.conversationMeta,
+.conversationDeleteButton {
+  color: #9b9b9b;
+}
+
+.conversationDeleteButton:hover,
+.sidebarToggle:hover {
+  background: rgb(255 255 255 / 10%);
+  color: #fff;
+}
+
+.sidebarToggle {
+  border: 1px solid rgb(255 255 255 / 7%);
+  background: rgb(255 255 255 / 5%);
+  color: #f2f2f2;
+}
+
+.chatHeader {
+  border-bottom-color: rgb(18 18 18 / 8%);
+  background: rgb(247 247 245 / 82%);
+}
+
+.skillListItem,
+.knowledgeBaseItem,
+.knowledgeItem,
+.modelConfigItem,
+.modelConfigEditor,
+.answerPanel,
+.multiModelCard,
+.skillMetadataItem,
+.modelConfigDetailItem,
+.sourcePreviewMarkdown,
+.composerControlGroup,
+.multiModelPopover,
+.slashMenu,
+.actionMenuPopover,
+.modalDialog {
+  border-color: rgb(18 18 18 / 13%);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(250 250 247 / 96%));
+}
+
+.skillListItem:hover,
+.knowledgeBaseItem:hover,
+.knowledgeItem:hover,
+.modelConfigItem:hover,
+.multiModelCard.selectable:hover {
+  border-color: rgb(18 18 18 / 22%);
+  background: #fffffd;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 4%), 0 12px 28px rgb(0 0 0 / 7%);
+}
+
+.knowledgeBaseItem.active,
+.modelConfigItem.active,
+.multiModelCard.canonical,
+.multiModelToggle.active {
+  border-color: #1c1c1c;
+  background:
+    linear-gradient(180deg, #fff, #f1f1ee);
+  box-shadow: inset 3px 0 0 #111, 0 1px 2px rgb(0 0 0 / 5%);
+}
+
+.skillAvatar,
+.knowledgeIcon,
+.skillStatus,
+.modelConfigStatus,
+.skillTrigger,
+.multiModelStatus {
+  background: #f4f4f0;
+}
+
+.skillStatus.enabled,
+.modelConfigStatus.ready {
+  background: #ecece8;
+  color: #171717;
+}
+
+.message.user .messageContent,
+.newChatButton,
+.knowledgeBaseAddButton,
+.knowledgeAddButton,
+.modelAddButton,
+.composer > button,
+.modalAction.primary {
+  background: linear-gradient(180deg, #242424, #0f0f0f);
+  color: #fff;
+}
+
+.message.user .messageContent {
+  border: 1px solid rgb(255 255 255 / 12%);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 11%);
+}
+
+.newChatButton:hover,
+.knowledgeBaseAddButton:hover,
+.knowledgeAddButton:hover,
+.modelAddButton:hover,
+.composer > button:hover,
+.modalAction.primary:hover {
+  background: linear-gradient(180deg, #343434, #141414);
+}
+
+.modelSelector,
+.knowledgeSelector,
+.skillSearchInput,
+.modelField input,
+.modelField select,
+.modalField input,
+textarea {
+  border-color: rgb(18 18 18 / 13%);
+  background: rgb(255 255 255 / 82%);
+}
+
+.messageContent a,
+.answerContent a,
+.answerSourceButton {
+  color: #111;
+}
+
+.loadingDots {
+  background:
+    radial-gradient(circle closest-side, #6b6f76 90%, transparent) 0 50% / 6px 6px no-repeat,
+    radial-gradient(circle closest-side, #6b6f76 90%, transparent) 50% 50% / 6px 6px no-repeat,
+    radial-gradient(circle closest-side, #6b6f76 90%, transparent) 100% 50% / 6px 6px no-repeat;
+}
+
+@media (max-width: 820px) {
+  .sidebar {
+    border-bottom: 1px solid rgb(255 255 255 / 8%);
+    background:
+      linear-gradient(180deg, #191919 0%, #101010 56%, #090909 100%);
+  }
+}
+
+/* Interaction refinements */
+.sidebar {
+  z-index: 20;
+  overflow: visible;
+}
+
+.sidebarHeader {
+  gap: 10px;
+}
+
+.sidebarHeader button[data-tip] {
+  position: relative;
+  overflow: visible;
+}
+
+.sidebarHeader button[data-tip]::before {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 12px);
+  z-index: 40;
+  width: max-content;
+  max-width: 220px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 10px;
+  background: rgb(18 18 18 / 94%);
+  color: #f5f5f5;
+  padding: 8px 10px;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 24%);
+  content: attr(data-tip);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(6px, -50%);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.sidebarHeader button[data-tip]::after {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 6px);
+  z-index: 41;
+  display: block;
+  width: 8px;
+  height: 8px;
+  background: rgb(18 18 18 / 94%);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(6px, -50%) rotate(45deg);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.sidebarHeader button[data-tip]:hover::before,
+.sidebarHeader button[data-tip]:focus-visible::before,
+.sidebarHeader button[data-tip]:hover::after,
+.sidebarHeader button[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.newChatButton,
+.sidebarNavButton {
+  min-height: 46px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  color: #f3f3f3;
+  padding: 0 14px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.newChatButton {
+  justify-content: center;
+  background: rgb(255 255 255 / 9%);
+  text-align: center;
+}
+
+.sidebarNavButton {
+  color: #d9d9d9;
+}
+
+.newChatButton:hover,
+.sidebarNavButton:hover,
+.sidebarNavButton.active {
+  border: 0;
+  background: rgb(255 255 255 / 14%);
+  box-shadow: none;
+  color: #fff;
+}
+
+.sidebarNavButton.active {
+  background: rgb(255 255 255 / 16%);
+}
+
+.message.user {
+  max-width: min(780px, calc(100% - 72px));
+  margin-right: clamp(12px, 2vw, 28px);
+  margin-left: auto;
+}
+
+.shell.sidebarCollapsed .message.user {
+  margin-right: clamp(14px, 2.4vw, 36px);
+}
+
+.answerPanel.sourceCapable {
+  margin-top: 0;
+  padding: 18px 20px;
+}
+
+.answerPanel.sourceCapable .messageContent,
+.answerPanel.sourceCapable .answerContent {
+  padding-right: 44px;
+}
+
+.answerSourceButton {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  left: auto;
+  z-index: 3;
+  display: inline-grid;
+  min-width: 34px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #626262;
+  padding: 0 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.answerSourceButton:hover,
+.answerSourceButton:focus-visible {
+  border: 0;
+  background: rgb(0 0 0 / 6%);
+  color: #111;
+  box-shadow: none;
+  text-decoration: none;
+  transform: none;
+}
+
+.sourcePreviewMarkdown {
+  max-height: min(560px, 66vh);
+  overflow: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 12px;
+  background: #111;
+  color: #f5f5f7;
+  padding: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.62;
+}
+
+.messageContent pre,
+.answerContent pre,
+.messageContent pre code,
+.answerContent pre code {
+  color: #f5f5f7;
+}
+
+.messageContent pre,
+.answerContent pre {
+  background: #111;
+}
+
+.messageContent pre code,
+.answerContent pre code {
+  border: 0;
+  background: transparent;
+}
+
+.composer {
+  width: min(900px, calc(100% - 48px));
+}
+
+.composerControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 0;
+}
+
+.composerControlGroup,
+.multiModelPicker {
+  width: auto;
+  min-width: 0;
+}
+
+.composerControlGroup {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 72%);
+  padding: 0 12px;
+  box-shadow: inset 0 0 0 1px rgb(18 18 18 / 9%);
+}
+
+.composerControlGroup:hover,
+.multiModelToggle:hover {
+  background: rgb(255 255 255 / 92%);
+  box-shadow: inset 0 0 0 1px rgb(18 18 18 / 16%);
+}
+
+.composerControlGroup > span {
+  flex: 0 0 auto;
+  color: #6b6b6b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.modelSelector,
+.knowledgeSelector {
+  width: auto;
+  max-width: min(260px, 36vw);
+  min-height: 34px;
+  border: 0;
+  background-color: transparent;
+  color: #1d1d1f;
+  padding: 0 24px 0 0;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: none;
+}
+
+.modelSelector:focus,
+.knowledgeSelector:focus {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.multiModelToggle {
+  display: inline-flex;
+  width: auto;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 72%);
+  color: #1d1d1f;
+  padding: 0 12px;
+  box-shadow: inset 0 0 0 1px rgb(18 18 18 / 9%);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.multiModelToggle.active {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #111;
+}
+
+.multiModelPopover {
+  bottom: calc(100% + 10px);
+  width: min(360px, 88vw);
+  gap: 8px;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 96%);
+  padding: 10px;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 18%);
+}
+
+.multiModelGroup {
+  display: grid;
+  gap: 6px;
+  border-bottom: 1px solid rgb(18 18 18 / 9%);
+  padding-bottom: 8px;
+}
+
+.multiModelGroupTitle,
+.multiModelPopoverTitle {
+  color: #737373;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.multiModelPrimary,
+.multiModelOption {
+  border-radius: 10px;
+  color: #1d1d1f;
+  padding: 8px 9px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.multiModelPrimary {
+  background: #f4f4f0;
+}
+
+.multiModelOption:hover {
+  background: #f4f4f0;
+}
+
+.modelModeHint {
+  max-width: 760px;
+  color: #757575;
+  font-size: 11px;
+}
+
+@media (max-width: 820px) {
+  .sidebar {
+    overflow: hidden;
+  }
+
+  .sidebarHeader button[data-tip]::before,
+  .sidebarHeader button[data-tip]::after {
+    display: none;
+  }
+
+  .message.user,
+  .shell.sidebarCollapsed .message.user {
+    max-width: calc(100% - 24px);
+    margin-right: auto;
+  }
+
+  .answerPanel.sourceCapable .messageContent,
+  .answerPanel.sourceCapable .answerContent {
+    padding-right: 0;
+    padding-top: 24px;
+  }
+
+  .composer {
+    width: calc(100% - 24px);
+  }
+
+  .composerControls {
+    align-items: stretch;
+  }
+
+  .composerControlGroup,
+  .multiModelPicker,
+  .multiModelToggle {
+    width: 100%;
+  }
+
+  .modelSelector,
+  .knowledgeSelector {
+    max-width: none;
+    width: 100%;
+  }
+}
+
+/* Requested visual polish */
+.chatHeader .eyebrow {
+  display: none;
+}
+
+.chatHeader > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.sidebarPanel {
+  padding-top: 18px;
+}
+
+.conversationList {
+  gap: 3px;
+}
+
+.answerPanel {
+  border-color: transparent;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 72%), rgb(247 247 244 / 82%));
+  box-shadow: none;
+}
+
+.answerPanel.sourceCapable {
+  border-color: transparent;
+}
+
+.message.assistant .answerPanel .messageContent,
+.message.assistant .answerPanel .answerContent {
+  background: transparent;
+}
+
+.multiModelCard .answerPanel,
+.multiModelCard > .answerContent {
+  border-color: transparent;
+  background: rgb(255 255 255 / 72%);
+}
+
+.actionMenuButton {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #6f6f6f;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.actionMenuButton:hover,
+.actionMenu:focus-within .actionMenuButton {
+  background: rgb(0 0 0 / 7%);
+  color: #111;
+}
+
+.actionMenuPopover {
+  min-width: 138px;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 96%);
+  padding: 7px;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 18%);
+}
+
+.actionMenuItem {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #1d1d1f;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.actionMenuItem:hover {
+  background: #f4f4f0;
+}
+
+.actionMenuItem.danger {
+  color: #b42318;
+}
+
+.actionMenuItem.danger:hover {
+  border: 0;
+  background: #fff1ef;
+  color: #9f1f17;
+}
+
+.sourcePreviewMarkdown {
+  max-height: min(580px, 68vh);
+  overflow: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 72%);
+  color: #1d1d1f;
+  padding: 18px;
+  white-space: normal;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.62;
+}
+
+.sourcePreviewMarkdown h1,
+.sourcePreviewMarkdown h2,
+.sourcePreviewMarkdown h3,
+.sourcePreviewMarkdown h4,
+.sourcePreviewMarkdown h5,
+.sourcePreviewMarkdown h6 {
+  color: #1d1d1f;
+}
+
+.sourcePreviewMarkdown pre {
+  border: 0;
+  border-radius: 10px;
+  background: #111;
+  color: #f5f5f7;
+}
+
+.sourcePreviewMarkdown pre code {
+  background: transparent;
+  color: #f5f5f7;
+}
+
+.sourcePreviewMarkdown code {
+  background: rgb(0 0 0 / 6%);
+  color: #1d1d1f;
+}
+
+@media (max-width: 820px) {
+  .sidebarPanel {
+    padding-top: 10px;
+  }
+}
+
+/* Modal close affordance and sidebar icons */
+.modalDialog {
+  padding-top: 22px;
+}
+
+.modalCloseButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 6%);
+  color: #1d1d1f;
+  padding: 0;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.modalCloseButton:hover,
+.modalCloseButton:focus-visible {
+  background: rgb(0 0 0 / 10%);
+  box-shadow: none;
+}
+
+.modalHeader {
+  padding-right: 34px;
+}
+
+.newChatButton,
+.sidebarNavButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Inline sidebar icons and wider markdown preview */
+.sidebarNavIcon {
+  display: grid;
+  width: 18px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0;
+  background: transparent;
+  color: #f6f6f6;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.newChatButton .sidebarNavIcon {
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.newChatButton:hover .sidebarNavIcon,
+.sidebarNavButton:hover .sidebarNavIcon,
+.sidebarNavButton.active .sidebarNavIcon {
+  background: transparent;
+  box-shadow: none;
+}
+
+.modalRoot.sourceWide .modalDialog {
+  width: min(1120px, calc(100vw - 48px));
+}
+
+.modalRoot.sourceWide .sourcePreviewMarkdown {
+  max-height: min(640px, 72vh);
+}

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Local Claude Code</title>
+    <title>Lmy' Harness Agent</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -13,11 +13,11 @@
           <span id="sidebarToggleTip" class="sidebarToggleTip">收起侧边栏</span>
         </button>
         <div class="sidebarHeader">
-          <h1>Harness Agent</h1>
-          <button id="newConversation" class="newChatButton" type="button">新建会话</button>
-          <button id="skillsNav" class="sidebarNavButton" type="button">◇ 技能库</button>
-          <button id="knowledgeNav" class="sidebarNavButton" type="button">▦ 知识库</button>
-          <button id="modelNav" class="sidebarNavButton" type="button">◉ 模型配置</button>
+          <h1>Lmy' Harness Agent</h1>
+          <button id="newConversation" class="newChatButton" type="button" data-tip="创建一个新的对话"><span class="sidebarNavIcon">+</span><span>新建对话</span></button>
+          <button id="skillsNav" class="sidebarNavButton" type="button" data-tip="查看、启用或删除技能"><span class="sidebarNavIcon">✦</span><span>技能库</span></button>
+          <button id="knowledgeNav" class="sidebarNavButton" type="button" data-tip="管理知识库和导入文件"><span class="sidebarNavIcon">▤</span><span>知识库</span></button>
+          <button id="modelNav" class="sidebarNavButton" type="button" data-tip="配置推理模型和向量模型"><span class="sidebarNavIcon">◉</span><span>模型配置</span></button>
         </div>
         <div class="sidebarPanel">
           <div id="conversationList" class="conversationList" aria-label="历史对话"></div>
@@ -27,7 +27,7 @@
       <section class="chatPane">
         <header class="chatHeader">
           <div>
-            <div class="eyebrow">Harness Agent</div>
+            <div class="eyebrow">Lmy' Harness Agent</div>
             <h2 id="conversationTitle">Conversation</h2>
           </div>
         </header>
@@ -77,7 +77,7 @@
 
         <form id="composer" class="composer">
           <div class="composerInput">
-            <textarea id="messageInput" rows="2" placeholder="Message Harness Agent, or type / for skills"></textarea>
+            <textarea id="messageInput" rows="2" placeholder="询问 Lmy' Harness Agent，或输入 / 使用技能"></textarea>
             <div id="skillMenu" class="slashMenu hidden" role="listbox" aria-label="Skill 快捷菜单"></div>
             <div class="composerControls">
               <label class="composerControlGroup">
