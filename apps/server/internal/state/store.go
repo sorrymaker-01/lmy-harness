@@ -24,6 +24,7 @@ type ToolConfigRecord struct {
 
 type ModelConfigRecord struct {
 	ID             string         `json:"id"`
+	ModelType      string         `json:"modelType"`
 	Provider       string         `json:"provider"`
 	APIKey         string         `json:"apiKey,omitempty"`
 	BaseURL        string         `json:"baseURL"`
@@ -142,9 +143,10 @@ func (s *Store) SeedModelConfig(record ModelConfigRecord) error {
 		return err
 	}
 	_, err = s.db.Exec(
-		`INSERT OR IGNORE INTO model_configs(id, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT OR IGNORE INTO model_configs(id, model_type, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.ID,
+		record.ModelType,
 		record.Provider,
 		record.APIKey,
 		record.BaseURL,
@@ -168,12 +170,13 @@ func (s *Store) ModelConfig(id string) (ModelConfigRecord, bool, error) {
 	var record ModelConfigRecord
 	var extraJSON string
 	err := s.db.QueryRow(
-		`SELECT id, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at
+		`SELECT id, model_type, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at
 		 FROM model_configs
 		 WHERE id = ?`,
 		id,
 	).Scan(
 		&record.ID,
+		&record.ModelType,
 		&record.Provider,
 		&record.APIKey,
 		&record.BaseURL,
@@ -200,9 +203,9 @@ func (s *Store) ListModelConfigs() ([]ModelConfigRecord, error) {
 		return []ModelConfigRecord{}, nil
 	}
 	rows, err := s.db.Query(
-		`SELECT id, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at
+		`SELECT id, model_type, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at
 		 FROM model_configs
-		 ORDER BY CASE WHEN id = 'default' THEN 0 ELSE 1 END, id`,
+		 ORDER BY CASE WHEN id = 'default' THEN 0 WHEN model_type = 'embedding' THEN 2 ELSE 1 END, id`,
 	)
 	if err != nil {
 		return nil, err
@@ -214,6 +217,7 @@ func (s *Store) ListModelConfigs() ([]ModelConfigRecord, error) {
 		var extraJSON string
 		if err := rows.Scan(
 			&record.ID,
+			&record.ModelType,
 			&record.Provider,
 			&record.APIKey,
 			&record.BaseURL,
@@ -232,6 +236,49 @@ func (s *Store) ListModelConfigs() ([]ModelConfigRecord, error) {
 	return records, rows.Err()
 }
 
+func (s *Store) FirstModelConfigByType(modelType string) (ModelConfigRecord, bool, error) {
+	if s == nil || s.db == nil {
+		return ModelConfigRecord{}, false, nil
+	}
+	modelType = normalizeModelType(modelType)
+	var record ModelConfigRecord
+	var extraJSON string
+	err := s.db.QueryRow(
+		`SELECT id, model_type, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at
+		 FROM model_configs
+		 WHERE model_type = ?
+		   AND (? != 'embedding' OR (trim(api_key) != '' AND trim(model) != ''))
+		 ORDER BY CASE
+			WHEN model_type = 'reasoning' AND id = 'default' THEN 0
+			WHEN model_type = 'embedding' AND id = 'default-embedding' THEN 0
+			ELSE 1
+		 END, id
+		 LIMIT 1`,
+		modelType,
+		modelType,
+	).Scan(
+		&record.ID,
+		&record.ModelType,
+		&record.Provider,
+		&record.APIKey,
+		&record.BaseURL,
+		&record.Model,
+		&record.Temperature,
+		&record.TimeoutSeconds,
+		&extraJSON,
+		&record.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return ModelConfigRecord{}, false, nil
+	}
+	if err != nil {
+		return ModelConfigRecord{}, false, err
+	}
+	record.Extra = map[string]any{}
+	_ = json.Unmarshal([]byte(extraJSON), &record.Extra)
+	return normalizeModelConfigRecord(record), true, nil
+}
+
 func (s *Store) SaveModelConfig(record ModelConfigRecord) error {
 	if s == nil || s.db == nil {
 		return nil
@@ -242,9 +289,10 @@ func (s *Store) SaveModelConfig(record ModelConfigRecord) error {
 		return err
 	}
 	_, err = s.db.Exec(
-		`INSERT INTO model_configs(id, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO model_configs(id, model_type, provider, api_key, base_url, model, temperature, timeout_seconds, extra_json, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
+			model_type = excluded.model_type,
 			provider = excluded.provider,
 			api_key = excluded.api_key,
 			base_url = excluded.base_url,
@@ -254,6 +302,7 @@ func (s *Store) SaveModelConfig(record ModelConfigRecord) error {
 			extra_json = excluded.extra_json,
 			updated_at = excluded.updated_at`,
 		record.ID,
+		record.ModelType,
 		record.Provider,
 		record.APIKey,
 		record.BaseURL,
@@ -437,6 +486,7 @@ func normalizeModelConfigRecord(record ModelConfigRecord) ModelConfigRecord {
 	if record.ID == "" {
 		record.ID = "default"
 	}
+	record.ModelType = normalizeModelType(record.ModelType)
 	record.Provider = strings.TrimSpace(record.Provider)
 	if record.Provider == "" {
 		record.Provider = "openai-compatible"
@@ -447,7 +497,7 @@ func normalizeModelConfigRecord(record ModelConfigRecord) ModelConfigRecord {
 		record.BaseURL = "https://ark-cn-beijing.bytedance.net/api/v3"
 	}
 	record.Model = strings.TrimSpace(record.Model)
-	if record.Model == "" {
+	if record.Model == "" && record.ModelType == "reasoning" {
 		record.Model = "ep-20260507115713-ltdzl"
 	}
 	if record.Temperature < 0 || record.Temperature > 2 {
@@ -459,7 +509,17 @@ func normalizeModelConfigRecord(record ModelConfigRecord) ModelConfigRecord {
 	if record.Extra == nil {
 		record.Extra = map[string]any{}
 	}
+	delete(record.Extra, "embeddingModel")
 	return record
+}
+
+func normalizeModelType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "embedding", "vector", "向量模型":
+		return "embedding"
+	default:
+		return "reasoning"
+	}
 }
 
 func normalizeApprovalPolicy(value string) string {
