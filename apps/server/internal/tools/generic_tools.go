@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	"code.byted.org/ai/lmy/apps/server/internal/memory"
-	"code.byted.org/ai/lmy/apps/server/internal/runtime"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/memory"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/runtime"
 )
 
 func RegisterGeneric(registry *runtime.Runtime, store memory.Store) {

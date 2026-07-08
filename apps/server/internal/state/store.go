@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"code.byted.org/ai/lmy/apps/server/internal/claudecode"
-	"code.byted.org/ai/lmy/apps/server/internal/runtime"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/claudecode"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/runtime"
 )
 
 type Store struct {
@@ -771,11 +771,11 @@ func normalizeModelConfigRecord(record ModelConfigRecord) ModelConfigRecord {
 	record.APIKey = strings.TrimSpace(record.APIKey)
 	record.BaseURL = strings.TrimRight(strings.TrimSpace(record.BaseURL), "/")
 	if record.BaseURL == "" {
-		record.BaseURL = "https://ark-cn-beijing.bytedance.net/api/v3"
+		record.BaseURL = "https://api.openai.com/v1"
 	}
 	record.Model = strings.TrimSpace(record.Model)
 	if record.Model == "" && record.ModelType == "reasoning" {
-		record.Model = "ep-20260507115713-ltdzl"
+		record.Model = "gpt-4o-mini"
 	}
 	if record.Temperature < 0 || record.Temperature > 2 {
 		record.Temperature = 0.2

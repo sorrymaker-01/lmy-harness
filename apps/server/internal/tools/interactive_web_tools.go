@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	"code.byted.org/ai/lmy/apps/server/internal/runtime"
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/runtime"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 const (
@@ -26,7 +26,7 @@ const (
 	defaultSearchResults  = 5
 	maxSearchResults      = 10
 	webRequestTimeout     = 15 * time.Second
-	webRequestUserAgent   = "LocalClaudeCode/0.1 (+https://code.byted.org/ai/lmy)"
+	webRequestUserAgent   = "LmyHarnessAgent/0.1 (+https://github.com/sorrymaker-01/lmy-harness)"
 	duckDuckGoSearchURL   = "https://duckduckgo.com/html/"
 	contentTypeTextPrefix = "text/"
 )

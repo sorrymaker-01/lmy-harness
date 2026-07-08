@@ -16,3 +16,4 @@ apps/server/data/qdrant/
 .DS_Store
 .idea/
 vertical_agent_*.xml
+release/

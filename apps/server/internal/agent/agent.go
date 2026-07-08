@@ -7,14 +7,14 @@ import (
 	"strings"
 	"sync"
 
-	"code.byted.org/ai/lmy/apps/server/internal/claudecode"
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	"code.byted.org/ai/lmy/apps/server/internal/knowledge"
-	"code.byted.org/ai/lmy/apps/server/internal/memory"
-	"code.byted.org/ai/lmy/apps/server/internal/model"
-	"code.byted.org/ai/lmy/apps/server/internal/runtime"
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
-	"code.byted.org/ai/lmy/apps/server/internal/skills"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/claudecode"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/knowledge"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/memory"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/model"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/runtime"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/skills"
 )
 
 type Agent struct {
@@ -60,6 +60,8 @@ type modelSkillRequest struct {
 	Name   string
 	Reason string
 }
+
+const maxModelRequestedSkillLoads = 3
 
 func NewAgent(store memory.Store, runtime *runtime.Runtime, model model.Client, skillReg *skills.Registry, skillConfig *skills.ConfigStore, startup claudecode.StartupContext) *Agent {
 	return &Agent{store: store, runtime: runtime, model: model, skillReg: skillReg, skillConfig: skillConfig, startup: startup, maxRounds: 20}
@@ -185,6 +187,7 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 	var allToolResults []contracts.ToolResult
 	var loadedSkillDetails []skills.Detail
 	loadedSkills := map[string]struct{}{}
+	modelRequestedSkillLoads := 0
 	retrievalResult := knowledge.RetrievalResult{}
 	finalAnswer := ""
 
@@ -285,6 +288,7 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 		if len(resp.ToolCalls) == 0 {
 			if request, ok := parseModelSkillRequest(resp.Content); ok {
 				modelMessages = append(modelMessages, resp.Message)
+				modelRequestedSkillLoads++
 				assistantMessage := resp.Message
 				if err := emitAgentEvent(emit, contracts.AgentStreamEvent{
 					Type:      "model_message",
@@ -302,20 +306,18 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 				}); err != nil {
 					return RunOutput{}, err
 				}
+				if modelRequestedSkillLoads > maxModelRequestedSkillLoads {
+					finalAnswer = a.recoverFinalAnswer(ctx, modelClient, modelMessages, input.UserMessage, emit, trace.ID, round, "模型连续请求加载 skill，已切换为直接回答。")
+					break
+				}
 				if _, loaded := loadedSkills[request.Name]; loaded {
-					modelMessages = append(modelMessages, contracts.LLMMessage{
-						Role:    contracts.RoleUser,
-						Content: "Skill /" + request.Name + " 在本轮已经加载。请使用已加载的 skill 上下文，直接回答原始用户请求。",
-					})
-					continue
+					finalAnswer = a.recoverFinalAnswer(ctx, modelClient, modelMessages, input.UserMessage, emit, trace.ID, round, "Skill /"+request.Name+" 已经加载，模型仍重复请求；请直接回答用户。")
+					break
 				}
 				detail, ok := a.loadSkillInstructionsForModel(request, emit, trace.ID)
 				if !ok {
-					modelMessages = append(modelMessages, contracts.LLMMessage{
-						Role:    contracts.RoleUser,
-						Content: "请求的 skill /" + request.Name + " 不可用或已禁用。请基于当前可用上下文和工具回答。",
-					})
-					continue
+					finalAnswer = a.recoverFinalAnswer(ctx, modelClient, modelMessages, input.UserMessage, emit, trace.ID, round, "请求的 skill /"+request.Name+" 不可用或已禁用；请基于当前上下文直接回答用户。")
+					break
 				}
 				loadedSkills[detail.Name] = struct{}{}
 				loadedSkillDetails = appendUniqueSkillDetail(loadedSkillDetails, detail)
@@ -415,7 +417,10 @@ func (a *Agent) run(ctx context.Context, input RunInput, emit AgentEventHandler)
 	}
 
 	if strings.TrimSpace(finalAnswer) == "" {
-		finalAnswer = "(reached maximum tool-call rounds)"
+		finalAnswer = a.recoverFinalAnswer(ctx, modelClient, modelMessages, input.UserMessage, emit, trace.ID, a.maxRounds+1, "已达到最大工具/skill 轮数；请停止请求工具或 skill，直接给出最终回答。")
+		if strings.TrimSpace(finalAnswer) == "" {
+			finalAnswer = "模型连续请求工具或 skill，未能生成最终回答。请简化问题，或切换到更稳定支持工具调用的模型后重试。"
+		}
 		modelMessages = append(modelMessages, contracts.LLMMessage{Role: contracts.RoleAssistant, Content: finalAnswer})
 	}
 
@@ -499,6 +504,41 @@ func (a *Agent) chatModel(ctx context.Context, client model.Client, input model.
 			TraceID: traceID,
 		})
 	})
+}
+
+func (a *Agent) recoverFinalAnswer(ctx context.Context, client model.Client, messages []contracts.LLMMessage, originalUserMessage string, emit AgentEventHandler, traceID string, round int, reason string) string {
+	recoveryMessages := append([]contracts.LLMMessage(nil), messages...)
+	recoveryMessages = append(recoveryMessages, contracts.LLMMessage{
+		Role: contracts.RoleUser,
+		Content: strings.Join([]string{
+			"[请直接给出最终回答]",
+			reason,
+			"不要再请求加载 skill，不要再调用工具，也不要输出 XML/JSON 协议片段。",
+			"请基于已有上下文，用自然语言回答原始用户请求。",
+			"原始用户请求：" + originalUserMessage,
+		}, "\n"),
+	})
+	resp, err := a.chatModel(ctx, client, model.Input{
+		System:   finalAnswerSystemPrompt(a.startup),
+		Messages: recoveryMessages,
+	}, emit, traceID, round)
+	if err != nil {
+		_ = emitAgentEvent(emit, contracts.AgentStreamEvent{
+			Type:    "error",
+			Round:   round,
+			Title:   "最终回答恢复失败",
+			Content: err.Error(),
+			TraceID: traceID,
+		})
+		return ""
+	}
+	if strings.TrimSpace(resp.Content) != "" {
+		return resp.Content
+	}
+	if strings.TrimSpace(resp.Message.Content) != "" {
+		return resp.Message.Content
+	}
+	return ""
 }
 
 func streamModelOutput(resp contracts.ModelResponse, calls []contracts.ToolCall) string {
@@ -1185,6 +1225,18 @@ func systemPrompt(tools []contracts.RuntimeTool, skillManifests []skills.Manifes
 		"5. 区分 skill 和 MCP：skill 加载提示上下文；MCP 暴露外部工具或资源。",
 		"6. 对工具失败或策略阻断给出清晰解释。",
 	}, "\n")
+}
+
+func finalAnswerSystemPrompt(startup claudecode.StartupContext) string {
+	parts := []string{
+		"你是一个能够实现工作任务并进行深度排疑解惑的智能助手。",
+		"当前处于最终回答恢复阶段。你必须直接回答用户，不要请求工具，不要请求加载 skill，不要输出 XML/JSON 协议片段。",
+		"如果已有上下文不足以完成任务，请说明缺少哪些信息，并给出当前能确定的结论或下一步建议。",
+	}
+	if strings.TrimSpace(startup.ProjectRoot) != "" {
+		parts = append(parts, "项目根目录："+startup.ProjectRoot)
+	}
+	return strings.Join(parts, "\n")
 }
 
 func renderStartupPrompt(startup claudecode.StartupContext) string {

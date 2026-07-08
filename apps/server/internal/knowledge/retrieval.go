@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 func (s *Store) Retrieve(ctx context.Context, query string, options RetrievalOptions) (RetrievalResult, error) {

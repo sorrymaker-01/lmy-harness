@@ -14,7 +14,7 @@ import (
 	"sync"
 	"unicode"
 
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 const maxImportBytes int64 = 256 * 1024 * 1024

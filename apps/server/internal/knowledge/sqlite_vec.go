@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 const (

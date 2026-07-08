@@ -1,4 +1,4 @@
-module code.byted.org/ai/lmy
+module github.com/sorrymaker-01/lmy-harness
 
 go 1.22.5
 

@@ -1928,7 +1928,7 @@ function renderModelConfigEditor(config: ModelConfig | null, options: { onCancel
   const provider = createLabeledInput("Provider", config?.provider || "openai-compatible", "text");
   const apiKey = createLabeledInput("API Key", "", "password");
   apiKey.input.placeholder = config?.apiKeySet ? "留空则保留已保存的 key" : "请输入 API key";
-  const baseURL = createLabeledInput("Base URL", config?.baseURL || "https://ark-cn-beijing.bytedance.net/api/v3", "text");
+  const baseURL = createLabeledInput("Base URL", config?.baseURL || "https://api.openai.com/v1", "text");
   const modelName = createLabeledInput("Model", config?.model || "", "text");
   const temperature = createLabeledInput("Temperature", String(config?.temperature ?? 0.2), "number");
   temperature.input.step = "0.1";

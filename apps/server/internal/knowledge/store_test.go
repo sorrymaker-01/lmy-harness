@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	statedb "code.byted.org/ai/lmy/apps/server/internal/infra/db"
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
+	statedb "github.com/sorrymaker-01/lmy-harness/apps/server/internal/infra/db"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 func TestStoreImportAndList(t *testing.T) {
@@ -441,14 +441,14 @@ func TestStoreImportPDFWithLimitedTextDoesNotFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStoreWithDB() error = %v", err)
 	}
-	item, err := store.Import("交底书.pdf", "application/pdf", bytes.NewReader([]byte("%PDF-1.7\n1 0 obj\n<</Type/Catalog>>\nendobj\n%%EOF")))
+	item, err := store.Import("sample-document.pdf", "application/pdf", bytes.NewReader([]byte("%PDF-1.7\n1 0 obj\n<</Type/Catalog>>\nendobj\n%%EOF")))
 	if err != nil {
 		t.Fatalf("Import() PDF error = %v", err)
 	}
 	if item.ID == "" || item.ChunkCount == 0 {
 		t.Fatalf("imported item = %+v, want indexed PDF fallback", item)
 	}
-	result, err := store.Retrieve(testContext(), "交底书", RetrievalOptions{TopK: 3})
+	result, err := store.Retrieve(testContext(), "sample-document", RetrievalOptions{TopK: 3})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}

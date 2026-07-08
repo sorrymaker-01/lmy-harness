@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"code.byted.org/ai/lmy/apps/server/internal/runtime"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/runtime"
 )
 
 func TestRegisterInteractiveWeb(t *testing.T) {

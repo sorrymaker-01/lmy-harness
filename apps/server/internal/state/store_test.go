@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"code.byted.org/ai/lmy/apps/server/internal/claudecode"
-	statedb "code.byted.org/ai/lmy/apps/server/internal/infra/db"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/claudecode"
+	statedb "github.com/sorrymaker-01/lmy-harness/apps/server/internal/infra/db"
 )
 
 func TestToolConfigPersistence(t *testing.T) {
@@ -207,10 +207,10 @@ func TestModelConfigPersistence(t *testing.T) {
 	if record.APIKey != "sk-updated" {
 		t.Fatalf("expected updated api key, got %q", record.APIKey)
 	}
-	if record.BaseURL != "https://ark-cn-beijing.bytedance.net/api/v3" {
+	if record.BaseURL != "https://api.openai.com/v1" {
 		t.Fatalf("expected default base url, got %q", record.BaseURL)
 	}
-	if record.Model != "ep-20260507115713-ltdzl" {
+	if record.Model != "gpt-4o-mini" {
 		t.Fatalf("expected default model, got %q", record.Model)
 	}
 	if record.Temperature != 0.2 {

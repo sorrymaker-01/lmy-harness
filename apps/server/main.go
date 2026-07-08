@@ -4,8 +4,8 @@ import (
 	"log"
 	"os"
 
-	httpapi "code.byted.org/ai/lmy/apps/server/internal/http"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	httpapi "github.com/sorrymaker-01/lmy-harness/apps/server/internal/http"
 )
 
 const maxRequestBodySize = 320 << 20

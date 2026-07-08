@@ -273,6 +273,43 @@ GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache 
 GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go run -tags sqlite_fts5 ./apps/server
 ```
 
+## 生成一键启动包
+
+可以生成一个包含后端二进制、前端静态资源、启动脚本和配置示例的发布包：
+
+```bash
+npm run package:release
+```
+
+生成结果在 `release/` 目录，例如：
+
+```text
+release/lmy-harness-agent-0.1.0-darwin-arm64.tar.gz
+```
+
+发布包面向当前构建平台和架构。由于后端依赖 CGO、SQLite FTS5 和 sqlite-vec，不同系统或 CPU 架构需要分别在对应环境构建。
+
+在新环境中解压后启动：
+
+```bash
+tar -xzf lmy-harness-agent-0.1.0-darwin-arm64.tar.gz
+cd lmy-harness-agent-0.1.0-darwin-arm64
+./start.sh
+```
+
+macOS 也可以双击 `start.command`。首次启动会自动创建 `apps/server/data/state.db`、知识库目录、默认会话和默认知识库。
+
+`start.sh` 会检查后端二进制、前端资源和 `pdftotext`。其中 `pdftotext` 只影响 PDF 知识库导入；如果缺失，脚本会打印 Poppler 安装提示，但不会阻止普通聊天和文本知识库功能启动。
+
+如需通过环境变量配置模型：
+
+```bash
+cp .env.example .env
+./start.sh
+```
+
+`.env` 支持配置 `ADDR`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`OPENAI_EMBEDDING_API_KEY`、`OPENAI_EMBEDDING_BASE_URL` 和 `OPENAI_EMBEDDING_MODEL`。也可以启动后在页面的“模型配置”中维护。
+
 ## 常用 API
 
 - `GET /health`

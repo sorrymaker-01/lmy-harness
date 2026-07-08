@@ -16,9 +16,9 @@ import (
 	"time"
 	"unicode"
 
-	"code.byted.org/ai/lmy/apps/server/internal/claudecode"
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	"code.byted.org/ai/lmy/apps/server/internal/runtime"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/claudecode"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/runtime"
 )
 
 const protocolVersion = "2024-11-05"

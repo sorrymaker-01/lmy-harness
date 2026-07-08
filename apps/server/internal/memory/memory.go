@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 type Store interface {

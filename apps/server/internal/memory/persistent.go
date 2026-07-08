@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	statedb "code.byted.org/ai/lmy/apps/server/internal/infra/db"
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	statedb "github.com/sorrymaker-01/lmy-harness/apps/server/internal/infra/db"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 type PersistentStore struct {

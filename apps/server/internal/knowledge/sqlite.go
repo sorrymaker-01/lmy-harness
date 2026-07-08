@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 const vectorIndexBatchSize = 64

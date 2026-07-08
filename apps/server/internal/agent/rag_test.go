@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"code.byted.org/ai/lmy/apps/server/internal/claudecode"
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	statedb "code.byted.org/ai/lmy/apps/server/internal/infra/db"
-	"code.byted.org/ai/lmy/apps/server/internal/knowledge"
-	"code.byted.org/ai/lmy/apps/server/internal/memory"
-	"code.byted.org/ai/lmy/apps/server/internal/model"
-	"code.byted.org/ai/lmy/apps/server/internal/runtime"
-	"code.byted.org/ai/lmy/apps/server/internal/skills"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/claudecode"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	statedb "github.com/sorrymaker-01/lmy-harness/apps/server/internal/infra/db"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/knowledge"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/memory"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/model"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/runtime"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/skills"
 )
 
 type captureModel struct {

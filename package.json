@@ -14,7 +14,8 @@
     "check": "npm run check:web && GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test -tags sqlite_fts5 ./apps/server/...",
     "check:web": "tsc -p apps/web/tsconfig.json --pretty false",
     "test": "GOTOOLCHAIN=go1.25.11 GOMODCACHE=/tmp/lmy-gomod-cache GOCACHE=/tmp/lmy-go-cache GOTMPDIR=/tmp go test -tags sqlite_fts5 ./apps/server/...",
-    "clean": "rm -rf apps/web/dist apps/server/bin"
+    "clean": "rm -rf apps/web/dist apps/server/bin",
+    "package:release": "bash scripts/package-release.sh"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

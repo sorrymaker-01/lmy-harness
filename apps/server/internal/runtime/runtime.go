@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sort"
 
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	"code.byted.org/ai/lmy/apps/server/internal/memory"
-	"code.byted.org/ai/lmy/apps/server/internal/model"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/memory"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/model"
 )
 
 type InvocationContext struct {

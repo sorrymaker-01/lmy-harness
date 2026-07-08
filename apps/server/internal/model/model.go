@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"code.byted.org/ai/lmy/apps/server/internal/contracts"
-	"code.byted.org/ai/lmy/apps/server/internal/shared"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/contracts"
+	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
 type Input struct {
@@ -88,8 +88,8 @@ func DefaultConfigFromEnv() Config {
 	return NormalizeConfig(Config{
 		Provider:       "openai-compatible",
 		APIKey:         firstEnv("OPENAI_API_KEY", "ARK_API_KEY"),
-		BaseURL:        envOrDefault("OPENAI_BASE_URL", "https://ark-cn-beijing.bytedance.net/api/v3"),
-		Model:          envOrDefault("OPENAI_MODEL", "ep-20260507115713-ltdzl"),
+		BaseURL:        envOrDefault("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		Model:          envOrDefault("OPENAI_MODEL", "gpt-4o-mini"),
 		EmbeddingModel: strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
 		Temperature:    envFloatOrDefault("OPENAI_TEMPERATURE", 0.2),
 		TimeoutSeconds: envIntOrDefault("OPENAI_TIMEOUT_SECONDS", 60),
@@ -117,11 +117,11 @@ func NormalizeConfig(config Config) Config {
 	config.APIKey = strings.TrimSpace(config.APIKey)
 	config.BaseURL = strings.TrimRight(strings.TrimSpace(config.BaseURL), "/")
 	if config.BaseURL == "" {
-		config.BaseURL = "https://ark-cn-beijing.bytedance.net/api/v3"
+		config.BaseURL = "https://api.openai.com/v1"
 	}
 	config.Model = strings.TrimSpace(config.Model)
 	if config.Model == "" {
-		config.Model = "ep-20260507115713-ltdzl"
+		config.Model = "gpt-4o-mini"
 	}
 	config.EmbeddingModel = strings.TrimSpace(config.EmbeddingModel)
 	if config.Temperature < 0 || config.Temperature > 2 {
