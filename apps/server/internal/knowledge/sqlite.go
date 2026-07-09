@@ -13,13 +13,18 @@ import (
 	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
+// vectorIndexBatchSize 是 embedding/向量写入的批大小：每批最多 64 个 chunk 一起
+// 调 Embed 与 Upsert，兼顾 embedding API 的批量效率与单请求体积限制。
 const vectorIndexBatchSize = 64
 
+// documentVersionRef 是“文档 ID + 当前激活版本号”的轻量引用，用于批量删除向量时定位范围。
 type documentVersionRef struct {
 	id      string
 	version int
 }
 
+// ensureDefaultKnowledgeBase 幂等地保证默认知识库存在且处于 active 状态：
+// 若曾被改名/软删除则恢复；仅在确有变化时才更新 updated_at，避免每次启动都刷新时间戳。
 func (s *Store) ensureDefaultKnowledgeBase(ctx context.Context) error {
 	if s.db == nil {
 		return nil
@@ -45,6 +50,10 @@ func (s *Store) ensureDefaultKnowledgeBase(ctx context.Context) error {
 	return err
 }
 
+// ListKnowledgeBases 列出所有未删除的知识库，并联表统计每个库下 active 文档数、
+// chunk 总数及父/子 chunk 数（只统计文档当前激活版本 active_version 的 chunk）。
+// 排序规则：默认知识库永远排第一，其余按更新时间倒序。
+// 无 SQLite 时返回一个内存中的默认知识库占位，保证上层 UI 不出错。
 func (s *Store) ListKnowledgeBases(ctx context.Context) ([]KnowledgeBase, error) {
 	if s == nil || s.db == nil {
 		return []KnowledgeBase{{ID: defaultKnowledgeBaseID, Name: defaultKnowledgeBaseName, Status: "active"}}, nil
@@ -81,6 +90,7 @@ func (s *Store) ListKnowledgeBases(ctx context.Context) ([]KnowledgeBase, error)
 	return bases, rows.Err()
 }
 
+// CreateKnowledgeBase 新建一个知识库（ID 前缀 "kbbase"），名称必填。
 func (s *Store) CreateKnowledgeBase(ctx context.Context, name string, description string) (KnowledgeBase, error) {
 	if s == nil || s.db == nil {
 		return KnowledgeBase{}, fmt.Errorf("state database is unavailable")
@@ -105,6 +115,12 @@ func (s *Store) CreateKnowledgeBase(ctx context.Context, name string, descriptio
 	return s.knowledgeBase(ctx, id)
 }
 
+// DeleteKnowledgeBase 删除一个知识库（默认知识库禁止删除）。
+// 删除采用“软删除 + 异步清理向量”的两段式设计：
+//  1. 在一个事务里把知识库、其下文档、文档版本、chunk、向量元数据行全部置为 deleted，
+//     并往 index_outbox 写一条 knowledge_base.deleted 事件留痕；
+//  2. 事务提交后，对每个文档异步调用 deleteVectorsAsync 真正清理 sqlite-vec 中的向量
+//     （向量删除失败不影响主流程，仅记 outbox；检索侧靠 status='active' 过滤兜底）。
 func (s *Store) DeleteKnowledgeBase(ctx context.Context, id string) (bool, error) {
 	if s == nil || s.db == nil {
 		return false, nil
@@ -163,6 +179,8 @@ func (s *Store) DeleteKnowledgeBase(ctx context.Context, id string) (bool, error
 	return true, nil
 }
 
+// activeDocumentVersionsForKnowledgeBase 取出某知识库下所有未删除文档的
+// (id, active_version) 列表，供删除知识库后逐个清理向量使用。
 func (s *Store) activeDocumentVersionsForKnowledgeBase(ctx context.Context, knowledgeBaseID string) ([]documentVersionRef, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, active_version FROM documents WHERE knowledge_base_id = ? AND status != 'deleted'`, knowledgeBaseID)
 	if err != nil {
@@ -180,6 +198,7 @@ func (s *Store) activeDocumentVersionsForKnowledgeBase(ctx context.Context, know
 	return documents, rows.Err()
 }
 
+// knowledgeBase 查询单个知识库详情（含 chunk 统计），不存在时返回 sql.ErrNoRows。
 func (s *Store) knowledgeBase(ctx context.Context, id string) (KnowledgeBase, error) {
 	id = normalizeKnowledgeBaseID(id)
 	var base KnowledgeBase
@@ -199,6 +218,8 @@ func (s *Store) knowledgeBase(ctx context.Context, id string) (KnowledgeBase, er
 	return base, err
 }
 
+// ensureKnowledgeBaseExists 校验目标知识库存在且未删除；若目标是默认知识库
+// 则顺手自愈（自动创建/恢复），其他知识库不存在时报错，防止文档写进悬空的库。
 func (s *Store) ensureKnowledgeBaseExists(ctx context.Context, id string) error {
 	id = normalizeKnowledgeBaseID(id)
 	if id == defaultKnowledgeBaseID {
@@ -212,6 +233,8 @@ func (s *Store) ensureKnowledgeBaseExists(ctx context.Context, id string) error 
 	return err
 }
 
+// listSQLite 是 SQLite 模式下的文档列表实现：联表 document_chunks 统计每个文档
+// 当前激活版本的 active chunk 数（总数/子/父），按导入时间倒序返回。
 func (s *Store) listSQLite(ctx context.Context, knowledgeBaseID string) ([]Item, error) {
 	knowledgeBaseID = strings.TrimSpace(knowledgeBaseID)
 	where := "WHERE d.status != 'deleted'"
@@ -247,6 +270,7 @@ func (s *Store) listSQLite(ctx context.Context, knowledgeBaseID string) ([]Item,
 	return items, rows.Err()
 }
 
+// itemSQLite 查询单个文档详情（含 chunk 统计）；第二个返回值表示是否存在。
 func (s *Store) itemSQLite(ctx context.Context, id string) (Item, bool, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -273,6 +297,9 @@ func (s *Store) itemSQLite(ctx context.Context, id string) (Item, bool, error) {
 	return item, true, nil
 }
 
+// migrateLegacyIndex 把旧版 index.json 清单里、但 documents 表中不存在的文档
+// 迁移进 SQLite（重新走抽取→切块→索引全流程）。启动时执行一次。
+// 单个文档迁移失败只记录 outbox（status=failed），不阻断其余文档与启动流程。
 func (s *Store) migrateLegacyIndex(ctx context.Context) error {
 	index, err := s.loadIndex()
 	if err != nil {
@@ -308,6 +335,11 @@ func (s *Store) migrateLegacyIndex(ctx context.Context) error {
 	return nil
 }
 
+// repairLimitedPDFExtractions 修复历史上抽取失败的 PDF：
+// 之前本机没有 pdftotext 时，无文本层的 PDF 只能写入 limitedPDFExtractionNotice 占位提示；
+// 如果现在 pdftotext 可用了，就扫描所有 active 的 PDF 文档，检查其 parsed 文本里
+// 是否仍含占位提示，命中则调用 reindexDocumentVersion 重新抽取并重建索引。
+// 注意先把候选收集完再逐个修复，避免在遍历 rows 的同时执行写事务。
 func (s *Store) repairLimitedPDFExtractions(ctx context.Context) error {
 	if s.db == nil || !pdftotextAvailable() {
 		return nil
@@ -365,6 +397,9 @@ func (s *Store) repairLimitedPDFExtractions(ctx context.Context) error {
 	return nil
 }
 
+// cleanupIndexedFiles 在启动时清理“已成功索引”的文档的原始文件与解析文本：
+// chunk 内容已完整存在 document_chunks 表里，原文件只在重抽取时才有用，
+// 因此对抽取质量合格（不含 PDF 占位提示）的文档可以安全删除磁盘副本以节省空间。
 func (s *Store) cleanupIndexedFiles(ctx context.Context) error {
 	if s.db == nil {
 		return nil
@@ -408,11 +443,17 @@ func (s *Store) cleanupIndexedFiles(ctx context.Context) error {
 	return nil
 }
 
+// shouldDeleteStoredFilesAfterIndex 判断索引完成后能否删除磁盘文件：
+// 抽取文本非空、且不含“PDF 无文本层”占位提示才允许删除——
+// 含占位提示的 PDF 需要保留原文件，等 pdftotext 可用后重新抽取。
 func shouldDeleteStoredFilesAfterIndex(parsed string) bool {
 	parsed = strings.TrimSpace(parsed)
 	return parsed != "" && !strings.Contains(parsed, limitedPDFExtractionNotice)
 }
 
+// cleanupStoredFiles 删除某文档版本的原始文件与解析文本，并把数据库里指向它们的
+// 路径字段清空。安全约束：只删除位于本模块 files/、parsed/ 目录之下的文件
+//（isKnowledgeRawFile / isKnowledgeParsedFile 校验），绝不触碰用户目录里的外部文件。
 func (s *Store) cleanupStoredFiles(ctx context.Context, docID string, version int, rawPath string, parsedPath string) error {
 	rawPath = strings.TrimSpace(rawPath)
 	if rawPath != "" && s.isKnowledgeRawFile(rawPath) {
@@ -445,14 +486,17 @@ func (s *Store) cleanupStoredFiles(ctx context.Context, docID string, version in
 	return nil
 }
 
+// isKnowledgeRawFile 判断路径是否位于本模块的原始文件目录（files/）内。
 func (s *Store) isKnowledgeRawFile(path string) bool {
 	return s.isPathUnder(path, s.filesDir())
 }
 
+// isKnowledgeParsedFile 判断路径是否位于本模块的解析文本目录（parsed/）内。
 func (s *Store) isKnowledgeParsedFile(path string) bool {
 	return s.isPathUnder(path, s.parsedDir())
 }
 
+// isPathUnder 通过绝对路径前缀比较判断 path 是否位于 dir 目录之下（防路径逃逸）。
 func (s *Store) isPathUnder(path string, dir string) bool {
 	baseDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -465,6 +509,11 @@ func (s *Store) isPathUnder(path string, dir string) bool {
 	return strings.HasPrefix(rawPath, baseDir+string(os.PathSeparator))
 }
 
+// reindexDocumentVersion 对某个已存在的文档版本做“原地重建索引”（目前用于 PDF 修复）：
+// 重新抽取文本→重新切块→在一个事务里删旧 chunk、更新版本/文档元信息、写入新 chunk，
+// 并记录 ingestion_jobs（stage=pdf_reindex）与 outbox 事件（document.reindexed）。
+// 若新抽取结果仍是空或仍含占位提示则直接放弃，保持旧数据不动。
+// 提交后：符合条件则清理磁盘文件，并异步“先删旧向量、再建新向量”。
 func (s *Store) reindexDocumentVersion(ctx context.Context, item Item, version int, parsedPath string) error {
 	item.KnowledgeBaseID = normalizeKnowledgeBaseID(item.KnowledgeBaseID)
 	if err := s.ensureKnowledgeBaseExists(ctx, item.KnowledgeBaseID); err != nil {
@@ -493,6 +542,7 @@ func (s *Store) reindexDocumentVersion(ctx context.Context, item Item, version i
 	}
 	chunks := chunkDocument(item.Name, parsed)
 	if len(chunks) == 0 {
+		// 兜底：正文切不出 chunk 时，至少用文件名生成一个 chunk，保证文档可被检索到。
 		chunks = chunkDocument(item.Name, item.Name)
 	}
 	now := formatSQLiteTime(shared.Now())
@@ -501,6 +551,7 @@ func (s *Store) reindexDocumentVersion(ctx context.Context, item Item, version i
 		return err
 	}
 	defer rollbackQuietly(tx)
+	// 物理删除该版本的旧 chunk（FTS5 索引由 document_chunks 上的 AFTER DELETE 触发器同步清理）。
 	if _, err := tx.ExecContext(ctx, `DELETE FROM document_chunks WHERE doc_id = ? AND doc_version = ?`, item.ID, version); err != nil {
 		return err
 	}
@@ -564,11 +615,13 @@ func (s *Store) reindexDocumentVersion(ctx context.Context, item Item, version i
 	if shouldDeleteStoredFilesAfterIndex(parsed) {
 		_ = s.cleanupStoredFiles(context.Background(), item.ID, version, item.Path, parsedPath)
 	}
+	// 向量索引采用“先删后建”而非原地更新：chunk ID 已全部换新，旧向量必须整体清掉。
 	s.deleteVectorsAsync(item.ID, version)
 	s.indexVectorsAsync(item, version, chunks)
 	return nil
 }
 
+// documentExists 判断 documents 表中是否已有该 ID（含已删除的），用于旧清单迁移防重。
 func (s *Store) documentExists(ctx context.Context, id string) (bool, error) {
 	var existing string
 	err := s.db.QueryRowContext(ctx, `SELECT id FROM documents WHERE id = ?`, id).Scan(&existing)
@@ -581,6 +634,9 @@ func (s *Store) documentExists(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
+// resolveLegacyItemPath 为旧清单条目定位原始文件：
+// 优先按 "<docID>_*" 前缀在 files/ 目录里 glob；找不到再看清单里记录的 Path——
+// 若该 Path 在 files/ 之外（老版本可能存在别处），则把文件拷贝进 files/ 统一管理后返回新路径。
 func (s *Store) resolveLegacyItemPath(item Item) (string, error) {
 	if matches, err := filepath.Glob(filepath.Join(s.filesDir(), item.ID+"_*")); err == nil && len(matches) > 0 {
 		return matches[0], nil
@@ -620,6 +676,15 @@ func (s *Store) resolveLegacyItemPath(item Item) (string, error) {
 	return dest, nil
 }
 
+// indexImportedItem 是导入后的“建索引”主流程（导入管线的核心）：
+//  1. 读原始文件并按格式抽取纯文本（extractTextContent：PDF/OOXML/纯文本）；
+//     抽取结果为空时退化为用文件名当内容，保证至少标题可检索；
+//  2. 把解析文本写入 parsed/<docID>_v1.txt（新导入固定为版本 1）；
+//  3. chunkDocument 做父子分层切块；
+//  4. 单事务写入：documents、document_versions、ingestion_jobs（stage=index, status=done）、
+//     全部 chunk（FTS5 由触发器自动同步）、以及 outbox 事件 document.indexed；
+//  5. 提交后：若抽取质量合格则清理磁盘文件，并异步生成 embedding 写入向量索引
+//     （向量化不阻塞导入请求，失败只记 outbox，可由 Backfill 兜底重建）。
 func (s *Store) indexImportedItem(ctx context.Context, item Item) error {
 	item.KnowledgeBaseID = normalizeKnowledgeBaseID(item.KnowledgeBaseID)
 	if err := s.ensureKnowledgeBaseExists(ctx, item.KnowledgeBaseID); err != nil {
@@ -725,6 +790,7 @@ func (s *Store) indexImportedItem(ctx context.Context, item Item) error {
 	return nil
 }
 
+// contentTypeFromName 按扩展名推断 MIME 类型，用于旧清单迁移时补全缺失的 content_type。
 func contentTypeFromName(name string) string {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".pdf":
@@ -744,12 +810,16 @@ func contentTypeFromName(name string) string {
 	}
 }
 
+// insertChunkSQL 是写入 document_chunks 表的插入语句。
+// document_chunks 是 chunk 的权威存储：父/子 chunk 同表存放（chunk_type 区分），
+// 其 title/content/heading_path 三列通过触发器同步进 FTS5 外部内容表 document_chunks_fts。
 const insertChunkSQL = `INSERT INTO document_chunks(
 	id, doc_id, doc_version, knowledge_base_id, parent_chunk_id, chunk_type, chunk_index,
 	title, content, content_hash, token_count, heading_path, start_offset, end_offset,
 	prev_chunk_id, next_chunk_id, status, metadata_json, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`
 
+// insertChunks 在事务内用预编译语句批量插入一批 chunk（父 + 子）。
 func insertChunks(ctx context.Context, tx *sql.Tx, item Item, version int, chunks []chunkDraft, now string) error {
 	stmt, err := tx.PrepareContext(ctx, insertChunkSQL)
 	if err != nil {
@@ -764,6 +834,7 @@ func insertChunks(ctx context.Context, tx *sql.Tx, item Item, version int, chunk
 	return nil
 }
 
+// insertChunkWithStatement 插入单个 chunk，Metadata 序列化为 JSON 存入 metadata_json 列。
 func insertChunkWithStatement(ctx context.Context, stmt *sql.Stmt, item Item, version int, chunk chunkDraft, now string) error {
 	if chunk.Metadata == nil {
 		chunk.Metadata = map[string]any{}
@@ -792,6 +863,10 @@ func insertChunkWithStatement(ctx context.Context, stmt *sql.Stmt, item Item, ve
 	return err
 }
 
+// deleteSQLite 删除单个文档：单事务内软删除 documents / document_versions /
+// document_chunks / document_chunk_vector_rows，并写入 document.deleted 事件；
+// 提交后同步调用向量后端删除该文档激活版本的向量，失败仅记 outbox 不回滚
+//（元数据行已标记 deleted，检索时会被 status 过滤掉，残留向量无害）。
 func (s *Store) deleteSQLite(ctx context.Context, id string) (bool, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -845,10 +920,15 @@ func (s *Store) deleteSQLite(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
+// indexVectors 为一批 chunk 生成 embedding 并写入向量索引。
+// 关键设计：只对 child chunk 做向量化——child 粒度小、语义集中，召回更精准；
+// parent chunk 不进向量索引，只在检索后展开阶段提供长上下文。
+// 按 vectorIndexBatchSize 分批 Embed + Upsert，全部成功后写一条 vector.upsert 的 outbox 记录。
 func (s *Store) indexVectors(ctx context.Context, item Item, version int, chunks []chunkDraft, vector VectorIndex, embedder EmbeddingProvider) error {
 	if vector == nil || embedder == nil {
 		return nil
 	}
+	// 过滤出内容非空的 child chunk（parent 与空 chunk 不做向量化）。
 	children := []chunkDraft{}
 	for _, chunk := range chunks {
 		if chunk.Type != "child" || strings.TrimSpace(chunk.Content) == "" {
@@ -904,11 +984,15 @@ func (s *Store) indexVectors(ctx context.Context, item Item, version int, chunks
 	return s.recordOutbox(ctx, "vector.upsert", item.ID, version, "", map[string]any{"points": totalPoints}, "done", "")
 }
 
+// indexVectorsAsync 在后台 goroutine 中执行向量化，避免 embedding API 的耗时
+// 阻塞导入请求。整体超时 30 分钟（大文档可能有成百上千个 chunk），
+// 失败以 vector.upsert/failed 记入 outbox，后续可通过 BackfillMissingVectorsAsync 补建。
 func (s *Store) indexVectorsAsync(item Item, version int, chunks []chunkDraft) {
 	vector, embedder := s.vectorDependencies()
 	if vector == nil || embedder == nil {
 		return
 	}
+	// 拷贝一份 chunk 切片，避免与调用方后续对底层数组的修改产生数据竞争。
 	chunksCopy := append([]chunkDraft(nil), chunks...)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
@@ -919,6 +1003,9 @@ func (s *Store) indexVectorsAsync(item Item, version int, chunks []chunkDraft) {
 	}()
 }
 
+// BackfillMissingVectorsAsync 异步补建缺失的向量：扫描所有“有 chunk 但无向量记录”的
+// child chunk，重新 embedding 并写入向量索引。典型触发时机：服务启动后、
+// 或用户刚配置好 embedding 模型时（此前导入的文档没有向量）。
 func (s *Store) BackfillMissingVectorsAsync() {
 	if s == nil || s.db == nil {
 		return
@@ -936,6 +1023,9 @@ func (s *Store) BackfillMissingVectorsAsync() {
 	}()
 }
 
+// backfillMissingVectors 循环分批处理缺向量的 chunk：每轮取一批（64 个）→ Embed →
+// Upsert，直到 missingVectorChunks 返回空。Upsert 成功后 document_chunk_vector_rows
+// 里就有了记录，下一轮查询自然不会再取到同一批，因此无需显式游标。
 func (s *Store) backfillMissingVectors(ctx context.Context, vector VectorIndex, embedder EmbeddingProvider) error {
 	totalPoints := 0
 	for {
@@ -984,6 +1074,10 @@ func (s *Store) backfillMissingVectors(ctx context.Context, vector VectorIndex, 
 	}
 }
 
+// missingVectorChunks 找出“该有向量但还没有”的 child chunk：
+// 用 LEFT JOIN document_chunk_vector_rows 且要求 v.chunk_id IS NULL（反连接），
+// 即 chunk 与文档均 active、但向量元数据表里没有 active 记录的那些 chunk。
+// 按文档更新时间倒序，优先补最新的文档。
 func (s *Store) missingVectorChunks(ctx context.Context, limit int) ([]vectorBackfillChunk, error) {
 	if limit <= 0 {
 		limit = vectorIndexBatchSize
@@ -1031,6 +1125,7 @@ func (s *Store) missingVectorChunks(ctx context.Context, limit int) ([]vectorBac
 	return chunks, rows.Err()
 }
 
+// deleteVectorsAsync 在后台删除某文档版本的全部向量（超时 2 分钟），失败记 outbox。
 func (s *Store) deleteVectorsAsync(docID string, version int) {
 	vector := s.vectorIndex()
 	if vector == nil {
@@ -1045,6 +1140,9 @@ func (s *Store) deleteVectorsAsync(docID string, version int) {
 	}()
 }
 
+// recordOutbox 往 index_outbox 表写一条事件记录。该表是简化版 outbox 模式：
+// 当前主要作为索引/向量操作的审计与失败留痕（status=done/failed），
+// 便于排障和将来实现失败重试，写入失败不会影响主流程。
 func (s *Store) recordOutbox(ctx context.Context, eventType string, docID string, docVersion int, chunkID string, payload map[string]any, status string, message string) error {
 	if s.db == nil {
 		return nil
@@ -1067,6 +1165,12 @@ func (s *Store) recordOutbox(ctx context.Context, eventType string, docID string
 	return err
 }
 
+// extractTextContent 是文本抽取的统一分发入口，按 MIME 类型 + 扩展名路由：
+//   - PDF → extractPDFText（优先 pdftotext，回退内置流解析）；
+//   - Office Open XML（docx/xlsx/pptx 及宏/模板变体）→ extractOfficeOpenXMLText；
+//   - 旧版二进制 Office（doc/xls/ppt）→ 明确报错，提示用户先转换格式；
+//   - 文本类（text/*、json、xml、md、csv、yaml…）→ 校验无 NUL 字节后原样返回；
+//   - 其他未知类型 → 若整体看起来像文本则收下，否则报“暂不支持”错误。
 func extractTextContent(ctx context.Context, data []byte, contentType string, name string, path string) (string, error) {
 	if len(data) == 0 {
 		return "", nil
