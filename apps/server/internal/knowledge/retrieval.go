@@ -12,6 +12,13 @@ import (
 	"github.com/sorrymaker-01/lmy-harness/apps/server/internal/shared"
 )
 
+// Retrieve 是混合检索的对外主入口，执行完整的三路召回 + 融合 + 重排链路：
+//  1. 三路召回：metadataRecall（标题/路径 LIKE）、keywordRecall（FTS5 BM25）、
+//     vectorRecall（sqlite-vec KNN，单独设 3 秒超时以免慢的 embedding/向量搜索拖累整体）；
+//  2. mergeRetrievedChunks 用 RRF（Reciprocal Rank Fusion）把三路结果融合去重；
+//  3. rerankRetrievedChunks 展开父 chunk、做多样性重排，截断到 TopK；
+//  4. 保留各阶段中间结果（便于前端展示召回链路），并把本次检索写入 retrieval_logs。
+// 单路召回出错只被忽略（返回空），不影响其余通道，保证检索的鲁棒性。
 func (s *Store) Retrieve(ctx context.Context, query string, options RetrievalOptions) (RetrievalResult, error) {
 	result := RetrievalResult{Query: query, Filter: normalizeRetrievalFilter(options.Filter)}
 	if s == nil || s.db == nil || strings.TrimSpace(query) == "" {
@@ -22,6 +29,7 @@ func (s *Store) Retrieve(ctx context.Context, query string, options RetrievalOpt
 
 	metadataResults, _ := s.metadataRecall(ctx, query, options)
 	keywordResults, _ := s.keywordRecall(ctx, query, options)
+	// 向量召回单独限时 3 秒：embedding 与 KNN 可能较慢，超时则本路为空，其他两路仍可返回结果。
 	vectorCtx, cancelVector := context.WithTimeout(ctx, 3*time.Second)
 	vectorResults, _ := s.vectorRecall(vectorCtx, query, options)
 	cancelVector()
@@ -38,6 +46,8 @@ func (s *Store) Retrieve(ctx context.Context, query string, options RetrievalOpt
 	return result, nil
 }
 
+// normalizeRetrievalResultSlices 把结果里的各 nil 切片替换为空切片，
+// 保证 JSON 序列化出 [] 而非 null，前端处理更稳。
 func normalizeRetrievalResultSlices(result *RetrievalResult) {
 	if result.KeywordResults == nil {
 		result.KeywordResults = []RetrievedChunk{}
@@ -56,6 +66,8 @@ func normalizeRetrievalResultSlices(result *RetrievalResult) {
 	}
 }
 
+// normalizeRetrievalOptions 为未设置的检索参数填默认值：
+// 关键词/向量候选各 40、元数据候选 20、最终 TopK 为 8，并归一化过滤条件。
 func normalizeRetrievalOptions(options RetrievalOptions) RetrievalOptions {
 	if options.KeywordLimit <= 0 {
 		options.KeywordLimit = 40
@@ -73,6 +85,8 @@ func normalizeRetrievalOptions(options RetrievalOptions) RetrievalOptions {
 	return options
 }
 
+// normalizeRetrievalFilter 清洗过滤条件：去空白、丢弃空串，并把知识库 ID 归一化
+//（空知识库 ID 归为 default）。三路召回共用清洗后的 filter。
 func normalizeRetrievalFilter(filter RetrievalFilter) RetrievalFilter {
 	cleanBaseIDs := make([]string, 0, len(filter.KnowledgeBaseIDs))
 	for _, id := range filter.KnowledgeBaseIDs {
@@ -94,6 +108,9 @@ func normalizeRetrievalFilter(filter RetrievalFilter) RetrievalFilter {
 	return filter
 }
 
+// keywordRecall 是关键词召回：把查询词构造成 FTS5 MATCH 表达式，在 document_chunks_fts
+// 外部内容表上做全文检索，用 bm25() 打分（分数越小越相关，故 ORDER BY score 升序）。
+// 只召回 active 的 child chunk（child 粒度小、召回更精确），并叠加知识库/文档过滤。
 func (s *Store) keywordRecall(ctx context.Context, query string, options RetrievalOptions) ([]RetrievedChunk, error) {
 	fts := buildFTSQuery(query)
 	if fts == "" {
@@ -124,6 +141,9 @@ func (s *Store) keywordRecall(ctx context.Context, query string, options Retriev
 	return scanRetrievedRows(rows, "keyword")
 }
 
+// metadataRecall 是元数据召回：对每个查询词在 chunk 标题、标题路径、文档标题、来源 URI 上
+// 做 LIKE '%term%' 匹配（词间 OR）。它补充 FTS5 覆盖不到的场景（如按文件名/标题命中），
+// 统一给固定分 1.0，按文档更新时间倒序取前 MetadataLimit 条。
 func (s *Store) metadataRecall(ctx context.Context, query string, options RetrievalOptions) ([]RetrievedChunk, error) {
 	terms := searchTerms(query)
 	if len(terms) == 0 {
@@ -158,6 +178,10 @@ func (s *Store) metadataRecall(ctx context.Context, query string, options Retrie
 	return scanRetrievedRows(rows, "metadata")
 }
 
+// vectorRecall 是向量（语义）召回：把 query 用 embedder 编码成向量，交给向量索引做 KNN，
+// 得到命中的 chunk_id 及相似度分数；再回 document_chunks 表按这些 ID 取出完整 chunk
+// （向量表只存元数据不存正文），并按向量分数从高到低排序、写入 vector_score。
+// 未配置 embedder/向量索引时直接返回空（退化为纯关键词+元数据检索）。
 func (s *Store) vectorRecall(ctx context.Context, query string, options RetrievalOptions) ([]RetrievedChunk, error) {
 	vector, embedder := s.vectorDependencies()
 	if vector == nil || embedder == nil {
@@ -199,6 +223,8 @@ func (s *Store) vectorRecall(ctx context.Context, query string, options Retrieva
 	return chunks, nil
 }
 
+// retrievalWhereSQL 把知识库/文档过滤条件拼成追加在 WHERE 后的 SQL 片段（作用于别名 alias），
+// 供关键词/元数据召回共用；空过滤返回空串。
 func retrievalWhereSQL(alias string, filter RetrievalFilter) (string, []any) {
 	parts := []string{}
 	args := []any{}
@@ -234,6 +260,8 @@ func retrievalWhereSQL(alias string, filter RetrievalFilter) (string, []any) {
 	return " AND " + strings.Join(parts, " AND "), args
 }
 
+// chunksByIDs 按一批 chunk ID 从 document_chunks 取出完整 child chunk（含正文/元数据），
+// 主要供向量召回回表使用，并按传入 ids 的顺序重排结果（保持向量相似度排序）。
 func (s *Store) chunksByIDs(ctx context.Context, ids []string, source string) ([]RetrievedChunk, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -283,6 +311,8 @@ func (s *Store) chunksByIDs(ctx context.Context, ids []string, source string) ([
 	return ordered, nil
 }
 
+// scanRetrievedRows 把查询结果行扫描成 RetrievedChunk：解析 metadata_json，
+// 并为该 chunk 打上来源标签（source）与对应的 "<source>_score" 分数。
 func scanRetrievedRows(rows *sql.Rows, source string) ([]RetrievedChunk, error) {
 	chunks := []RetrievedChunk{}
 	for rows.Next() {
@@ -317,6 +347,12 @@ func scanRetrievedRows(rows *sql.Rows, source string) ([]RetrievedChunk, error) 
 	return chunks, rows.Err()
 }
 
+// mergeRetrievedChunks 用 RRF（Reciprocal Rank Fusion，倒数排名融合）把多路召回结果合并去重。
+// RRF 的思想：一个 chunk 在某路中排名越靠前（rank 越小）贡献越大，得分累加 1/(60+rank+1)
+//（常数 60 是 RRF 惯用平滑项，削弱头部名次的过度主导）。融合的好处是无需对不同量纲的
+// 分数（bm25 vs 余弦 vs 固定 1.0）做归一化，只看各自的相对排名即可跨通道比较。
+// 去重键由 dedupeKey 决定（同父 chunk 或同内容哈希视为一条），命中多路时累加 rrf、
+// 合并来源标签、并保留各通道的最优单项分（betterScore）。最后按 rrf 降序输出。
 func mergeRetrievedChunks(groups ...[]RetrievedChunk) []RetrievedChunk {
 	byKey := map[string]*RetrievedChunk{}
 	order := []string{}
@@ -336,7 +372,9 @@ func mergeRetrievedChunks(groups ...[]RetrievedChunk) []RetrievedChunk {
 			if existing.Scores == nil {
 				existing.Scores = map[string]float64{}
 			}
+			// RRF 累加：该 chunk 在本路中排第 rank+1 名，贡献 1/(60+名次)。
 			existing.Scores["rrf"] += 1 / (60 + float64(rank+1))
+			// 同一 chunk 被多路命中时，保留每类单项分中“更优”的那个（bm25 越小越好，其余越大越好）。
 			for name, score := range chunk.Scores {
 				if current, ok := existing.Scores[name]; !ok || betterScore(name, score, current) {
 					existing.Scores[name] = score
@@ -355,6 +393,10 @@ func mergeRetrievedChunks(groups ...[]RetrievedChunk) []RetrievedChunk {
 	return out
 }
 
+// expandParentChunks 把命中的 child chunk 展开为其 parent chunk 的长上下文：
+// 对每个有 ParentChunkID 的命中，取出 parent，用 parent 的正文/标题/偏移替换 child，
+// 但保留 child 的 ID、命中来源与分数（即“召回靠 child 精确、喂给 LLM 用 parent 完整”）。
+// parent 取不到（如已删除）时退回原 child。这是父子分层检索的关键收益环节。
 func expandParentChunks(ctx context.Context, db *sql.DB, chunks []RetrievedChunk) []RetrievedChunk {
 	out := make([]RetrievedChunk, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -377,6 +419,9 @@ func expandParentChunks(ctx context.Context, db *sql.DB, chunks []RetrievedChunk
 	return out
 }
 
+// rerankRetrievedChunks 是内置的“重排”实现（无外部 reranker 模型）：
+// 先按 RRF 顺序展开父 chunk，再做多样性截断到 TopK，最后写入 rerank_score
+//（用倒序名次 len-i 作为分值，纯粹表达最终名次，越靠前分越高）。
 func rerankRetrievedChunks(ctx context.Context, db *sql.DB, chunks []RetrievedChunk, topK int) []RetrievedChunk {
 	expanded := expandParentChunks(ctx, db, chunks)
 	reranked := diversifyRetrievedChunks(expanded, topK)
@@ -389,6 +434,7 @@ func rerankRetrievedChunks(ctx context.Context, db *sql.DB, chunks []RetrievedCh
 	return reranked
 }
 
+// fetchParentChunk 按 ID 取一个 active 的 parent chunk（连同文档来源信息）；不存在返回 false。
 func fetchParentChunk(ctx context.Context, db *sql.DB, parentID string) (RetrievedChunk, bool) {
 	var chunk RetrievedChunk
 	var metadataJSON string
@@ -424,6 +470,10 @@ func fetchParentChunk(ctx context.Context, db *sql.DB, parentID string) (Retriev
 	return chunk, true
 }
 
+// diversifyRetrievedChunks 做多样性重排/截断，避免最终结果被单一文档或重复内容霸占：
+//   - 按内容哈希去重（父 chunk 展开后相邻 child 常指向同一 parent，会产生重复正文）；
+//   - 每个文档最多贡献 3 条（在已凑够 3 条结果后才开始限制，保证少文档场景不被误伤）；
+//   - 累计到 topK 条即停止。输入已按 RRF 名次有序，这里按序贪心挑选。
 func diversifyRetrievedChunks(chunks []RetrievedChunk, topK int) []RetrievedChunk {
 	if topK <= 0 {
 		topK = 8
@@ -432,12 +482,14 @@ func diversifyRetrievedChunks(chunks []RetrievedChunk, topK int) []RetrievedChun
 	docCount := map[string]int{}
 	contentSeen := map[string]struct{}{}
 	for _, chunk := range chunks {
+		// 内容哈希去重：父展开后的重复正文只保留一条。
 		if chunk.ContentHash != "" {
 			if _, ok := contentSeen[chunk.ContentHash]; ok {
 				continue
 			}
 			contentSeen[chunk.ContentHash] = struct{}{}
 		}
+		// 单文档配额：已有 >=3 条结果后，同一文档超过 3 条则跳过，促进跨文档多样性。
 		if docCount[chunk.DocID] >= 3 && len(out) >= 3 {
 			continue
 		}
@@ -450,6 +502,8 @@ func diversifyRetrievedChunks(chunks []RetrievedChunk, topK int) []RetrievedChun
 	return out
 }
 
+// dedupeKey 为融合去重生成键：优先按父 chunk（同一 parent 下的不同 child 视为一条，
+// 因为最终都会展开成同一段父上下文），其次按内容哈希，最后退化为 chunk ID。
 func dedupeKey(chunk RetrievedChunk) string {
 	if strings.TrimSpace(chunk.ParentChunkID) != "" {
 		return "parent:" + chunk.ParentChunkID
@@ -460,6 +514,7 @@ func dedupeKey(chunk RetrievedChunk) string {
 	return "chunk:" + chunk.ID
 }
 
+// copyScores 深拷贝分数 map，避免融合时改到原召回结果的分数。
 func copyScores(scores map[string]float64) map[string]float64 {
 	out := map[string]float64{}
 	for name, score := range scores {
@@ -468,6 +523,8 @@ func copyScores(scores map[string]float64) map[string]float64 {
 	return out
 }
 
+// betterScore 判断某类单项分 next 是否比 current 更优：
+// bm25/keyword 分越小越好（用 <），其余（向量/元数据等）越大越好。
 func betterScore(name string, next float64, current float64) bool {
 	if strings.Contains(name, "bm25") || strings.Contains(name, "keyword") {
 		return next < current
@@ -475,6 +532,7 @@ func betterScore(name string, next float64, current float64) bool {
 	return next > current || math.Abs(next-current) < 1e-9
 }
 
+// mergeSources 合并两个来源标签列表并去重（保持出现顺序）。
 func mergeSources(left []string, right []string) []string {
 	seen := map[string]struct{}{}
 	out := []string{}
@@ -492,6 +550,9 @@ func mergeSources(left []string, right []string) []string {
 	return out
 }
 
+// buildFTSQuery 把用户查询转成 FTS5 的 MATCH 表达式：
+// 提取词元后各自用双引号包裹（转义内部引号，作为短语项避免 FTS5 语法符号被误解），
+// 以 OR 连接（宽松召回，命中任一词即可）。无有效词元时返回空串（跳过关键词召回）。
 func buildFTSQuery(query string) string {
 	terms := searchTerms(query)
 	if len(terms) == 0 {
@@ -507,6 +568,11 @@ func buildFTSQuery(query string) string {
 	return strings.Join(quoted, " OR ")
 }
 
+// searchTerms 把查询切成词元，供 FTS5 与元数据 LIKE 共用。规则：
+//   - 字母/数字/非 ASCII（含中文，>=128）以及连接符 _ - / . : # @ 视为词内字符（保留标识符/路径完整）；
+//   - 其他字符作为分隔符；
+//   - 丢弃长度 <2 的词；若切不出任何词但原查询>=2 字符则整体作为一个词兜底；
+//   - 最多保留 8 个词，防止超长查询把 SQL 撑爆。
 func searchTerms(query string) []string {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -542,6 +608,8 @@ func searchTerms(query string) []string {
 	return terms
 }
 
+// recordRetrievalLog 把一次检索的过程（查询、过滤、各阶段结果的精简版）写入 retrieval_logs，
+// 便于后续回溯召回质量与调优，写入失败不影响检索返回。
 func (s *Store) recordRetrievalLog(ctx context.Context, conversationID string, result RetrievalResult) error {
 	if s.db == nil {
 		return nil
@@ -563,6 +631,8 @@ func (s *Store) recordRetrievalLog(ctx context.Context, conversationID string, r
 	return err
 }
 
+// slimChunks 把 chunk 精简为只含 ID/来源/分数等关键字段的日志视图，
+// 避免把大段正文写进 retrieval_logs（节省空间，日志只需能追溯召回链路）。
 func slimChunks(chunks []RetrievedChunk) []map[string]any {
 	out := make([]map[string]any, 0, len(chunks))
 	for _, chunk := range chunks {
