@@ -13,16 +13,23 @@ import (
 )
 
 const (
+	// sqliteVecIndexName 是 vector_index_state 表里本索引的逻辑名（记录后端/维度/状态）。
 	sqliteVecIndexName = "document_chunks"
+	// sqliteVecTableName 是承载向量数据的 sqlite-vec 虚拟表名（vec0 表）。
 	sqliteVecTableName = "document_chunk_vectors"
-	sqliteVecMetric    = "cosine"
+	// sqliteVecMetric 是相似度度量方式：余弦距离（适合归一化文本 embedding）。
+	sqliteVecMetric = "cosine"
 )
 
+// SQLiteVecIndex 是 VectorIndex 接口基于 sqlite-vec 扩展的实现：把向量存进 SQLite 的
+// vec0 虚拟表，与关键词索引共用同一个数据库文件，无需独立部署向量数据库。
+// 内部用互斥锁串行化写操作，因为建表/维度切换/upsert 涉及多表联动，需保证一致性。
 type SQLiteVecIndex struct {
 	db *sql.DB
 	mu sync.Mutex
 }
 
+// NewSQLiteVecIndex 构造 sqlite-vec 向量索引；db 为 nil 时返回 nil（表示未启用向量能力）。
 func NewSQLiteVecIndex(db *sql.DB) *SQLiteVecIndex {
 	if db == nil {
 		return nil
@@ -30,6 +37,11 @@ func NewSQLiteVecIndex(db *sql.DB) *SQLiteVecIndex {
 	return &SQLiteVecIndex{db: db}
 }
 
+// Upsert 批量写入/覆盖向量点。核心设计是“元数据行 + 向量行”两张表配合：
+//   - document_chunk_vector_rows：普通表，按 chunk_id 存元数据，自增主键 id 作为向量表的 rowid；
+//   - vec0 虚拟表：只按 rowid 存 embedding blob（vec0 表不能直接 upsert，故先删后插）。
+// 向量维度由本批首个点决定，并通过 ensureVectorTable 保证虚拟表按该维度建好；
+// 单事务写入，保证元数据与向量同时生效或同时回滚。
 func (i *SQLiteVecIndex) Upsert(ctx context.Context, points []VectorPoint) error {
 	if i == nil || i.db == nil || len(points) == 0 {
 		return nil
@@ -84,6 +96,7 @@ func (i *SQLiteVecIndex) Upsert(ctx context.Context, points []VectorPoint) error
 
 	now := formatSQLiteTime(shared.Now())
 	for _, point := range points {
+		// 跳过无 chunk_id 或维度不一致的点（同一批必须等维度，避免污染定长向量表）。
 		if strings.TrimSpace(point.ChunkID) == "" || len(point.Vector) != dimension {
 			continue
 		}
@@ -105,14 +118,17 @@ func (i *SQLiteVecIndex) Upsert(ctx context.Context, points []VectorPoint) error
 		); err != nil {
 			return err
 		}
+		// 取元数据行的自增 id 作为向量表 rowid，把两张表按 rowid 对齐。
 		var rowID int64
 		if err := tx.QueryRowContext(ctx, `SELECT id FROM document_chunk_vector_rows WHERE chunk_id = ?`, point.ChunkID).Scan(&rowID); err != nil {
 			return err
 		}
+		// 向量序列化为 sqlite-vec 要求的 float32 blob 格式。
 		vectorBlob, err := sqlite_vec.SerializeFloat32(point.Vector)
 		if err != nil {
 			return err
 		}
+		// vec0 虚拟表不支持 upsert，故先按 rowid 删旧向量再插新向量。
 		if _, err := deleteVector.ExecContext(ctx, rowID); err != nil {
 			return err
 		}
@@ -123,6 +139,8 @@ func (i *SQLiteVecIndex) Upsert(ctx context.Context, points []VectorPoint) error
 	return tx.Commit()
 }
 
+// DeleteDocument 删除某文档指定版本的全部向量：先查出该文档版本对应的所有 rowid，
+// 逐个从 vec0 虚拟表删向量，再删元数据行，单事务提交。表不存在时直接返回（无向量可删）。
 func (i *SQLiteVecIndex) DeleteDocument(ctx context.Context, docID string, docVersion int) error {
 	if i == nil || i.db == nil || strings.TrimSpace(docID) == "" {
 		return nil
@@ -165,6 +183,12 @@ func (i *SQLiteVecIndex) DeleteDocument(ctx context.Context, docID string, docVe
 	return tx.Commit()
 }
 
+// Search 用查询向量做 KNN 检索并叠加知识库/文档过滤。实现要点：
+//   - 先校验查询向量维度与索引维度一致（不一致直接返回空，避免 sqlite-vec 报错）；
+//   - vec0 的 KNN 只能在 MATCH ... AND k=? 子句里表达，且过滤条件会在 JOIN 之后生效，
+//     因此当带元数据过滤时用 sqliteVecSearchK 放大 k（多召回候选），再 JOIN 元数据表过滤，
+//     最后按距离升序 LIMIT，防止“过滤后不足 limit 条”；
+//   - 距离经 sqliteVecDistanceScore 归一化成越大越相似的分数，并把元数据展开进 Payload。
 func (i *SQLiteVecIndex) Search(ctx context.Context, vector []float32, filter RetrievalFilter, limit int) ([]VectorHit, error) {
 	if i == nil || i.db == nil || len(vector) == 0 {
 		return nil, nil
@@ -242,6 +266,11 @@ func (i *SQLiteVecIndex) Search(ctx context.Context, vector []float32, filter Re
 	return hits, rows.Err()
 }
 
+// ensureVectorTable 幂等地保证 vec0 虚拟表按给定维度存在，并同步 vector_index_state：
+//   - 若当前记录维度已等于目标维度且表存在，直接返回；
+//   - 若维度发生变化（例如切换了 embedding 模型），必须删表重建：drop 虚拟表、清空元数据行、
+//     清 state 记录（vec0 的向量维度在建表时固定，无法动态改，旧向量也与新模型不可比）；
+//   - 建表后写入/更新 vector_index_state 记录本索引的后端、表名、维度、度量与状态。
 func (i *SQLiteVecIndex) ensureVectorTable(ctx context.Context, dimension int) error {
 	if dimension <= 0 {
 		return nil
@@ -295,6 +324,7 @@ func (i *SQLiteVecIndex) ensureVectorTable(ctx context.Context, dimension int) e
 	return err
 }
 
+// currentDimension 读取当前 active 的 sqlite-vec 索引维度；无记录时返回 (0,false,nil)。
 func (i *SQLiteVecIndex) currentDimension(ctx context.Context) (int, bool, error) {
 	var dimension int
 	err := i.db.QueryRowContext(ctx, `SELECT dimension FROM vector_index_state WHERE name = ? AND backend = 'sqlite-vec' AND status = 'active'`, sqliteVecIndexName).Scan(&dimension)
@@ -307,6 +337,7 @@ func (i *SQLiteVecIndex) currentDimension(ctx context.Context) (int, bool, error
 	return dimension, dimension > 0, nil
 }
 
+// vectorTableExists 通过 sqlite_master 判断 vec0 虚拟表是否已建。
 func (i *SQLiteVecIndex) vectorTableExists(ctx context.Context) (bool, error) {
 	var name string
 	err := i.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE name = ?`, sqliteVecTableName).Scan(&name)
@@ -319,6 +350,8 @@ func (i *SQLiteVecIndex) vectorTableExists(ctx context.Context) (bool, error) {
 	return name == sqliteVecTableName, nil
 }
 
+// sqliteVecFilterSQL 把知识库/文档过滤条件拼成 SQL 片段（作用在元数据表别名 alias 上），
+// 返回追加到 WHERE 后的 " AND ..." 字符串及对应参数。空过滤返回空串。
 func sqliteVecFilterSQL(alias string, filter RetrievalFilter) (string, []any) {
 	parts := []string{}
 	args := []any{}
@@ -356,6 +389,10 @@ func sqliteVecFilterSQL(alias string, filter RetrievalFilter) (string, []any) {
 	return " AND " + strings.Join(parts, " AND "), args
 }
 
+// sqliteVecSearchK 计算传给 vec0 的 KNN 参数 k：
+// 无过滤时 k 就等于 limit（KNN 结果直接够用）；带元数据过滤时，KNN 先于过滤执行，
+// 若只取 limit 个近邻，过滤后可能剩不下几条，故把 k 放大 20 倍并夹在 [200, 2000] 区间，
+// 用“多召回、后过滤”换取过滤场景下的召回充足性（同时限制上限避免开销过大）。
 func sqliteVecSearchK(limit int, filter RetrievalFilter) int {
 	if limit <= 0 {
 		limit = 40
@@ -373,6 +410,8 @@ func sqliteVecSearchK(limit int, filter RetrievalFilter) int {
 	return k
 }
 
+// sqliteVecDistanceScore 把“越小越近”的距离转成“越大越相似”的分数（1/(1+distance)），
+// 落在 (0,1] 区间，便于与其他召回通道的分数统一比较/融合。
 func sqliteVecDistanceScore(distance float64) float64 {
 	if distance < 0 {
 		return 0
@@ -380,6 +419,7 @@ func sqliteVecDistanceScore(distance float64) float64 {
 	return 1 / (1 + distance)
 }
 
+// normalizeVectorStatus 归一化向量行状态，空值默认为 "active"。
 func normalizeVectorStatus(status string) string {
 	status = strings.TrimSpace(status)
 	if status == "" {
