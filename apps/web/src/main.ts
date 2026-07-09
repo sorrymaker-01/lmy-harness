@@ -1,5 +1,24 @@
+/**
+ * main.ts —— 前端单页应用（SPA）的唯一入口，不依赖任何框架。
+ *
+ * 整体架构：
+ * - 原生 TypeScript + 原生 DOM API（document.createElement / innerHTML），无 React/Vue；
+ * - 状态管理：模块级顶层变量（conversations / availableSkills / modelConfigs 等）
+ *   充当全局 store，配合一组 renderXxx() 函数手动触发重渲染（"状态变了就整块重画"）；
+ * - 视图切换：单页内四个视图（chat / skills / knowledge / models），通过 setView()
+ *   切换各区块的 hidden class，而非路由；
+ * - 持久化：模型选择、知识库选择、侧边栏折叠状态存 localStorage，业务数据全部走后端 API；
+ * - 流式对话：POST /api/conversations/:id/chat/stream 返回 SSE，前端用 fetch +
+ *   ReadableStream 手动解析（而非 EventSource，因为需要 POST body），
+ *   按事件类型增量渲染"思考过程 trace + 回答 Markdown"；
+ * - 多模型回答：一次提问可同时请求 1 个主模型 + 至多 2 个副模型，每个模型一张卡片
+ *   并行流式渲染，回答完成后用户可点选任一回答作为本轮的 canonical（进入后续上下文）。
+ */
 import { renderMarkdown } from "./markdown.js";
 
+// ===================== 类型定义（与后端 JSON 协议一一对应） =====================
+
+/** 消息角色：用户 / 助手 / 工具结果 */
 type Role = "user" | "assistant" | "tool";
 
 type Conversation = {
@@ -18,6 +37,13 @@ type Message = {
   metadata?: MessageMetadata;
 };
 
+/**
+ * 助手消息的元数据。多模型回答的关键信息都存在这里：
+ * - multiModel：标记该消息是"一轮多模型回答"，渲染时走多卡片布局；
+ * - turnId：本轮对话的 ID，用于 PUT canonical-response 接口定位轮次；
+ * - canonicalResponseId：当前被选为"用于上下文"的回答 ID；
+ * - modelResponses：本轮所有模型的回答摘要列表（历史消息回放时使用）。
+ */
 type MessageMetadata = Record<string, unknown> & {
   multiModel?: boolean;
   turnId?: string;
@@ -26,6 +52,7 @@ type MessageMetadata = Record<string, unknown> & {
   modelResponses?: ModelResponseSummary[];
 };
 
+/** 多模型回答中单个模型的回答快照（含状态、错误信息、是否主模型等） */
 type ModelResponseSummary = {
   id: string;
   turnId?: string;
@@ -54,6 +81,7 @@ type ToolResult = {
   error?: string;
 };
 
+/** Skill（技能）定义，对应后端 /api/skills 返回结构；readme/instructions 等重字段按需懒加载 */
 type Skill = {
   id: string;
   name: string;
@@ -92,6 +120,17 @@ type SkillResource = {
   uri?: string;
 };
 
+/**
+ * SSE 流式事件的统一载荷。后端把事件类型放在 data JSON 的 type 字段
+ * （若缺失则回退到 SSE 的 event: 行）。前端消费的主要类型：
+ * - user_message：用户消息回显（前端已本地渲染，直接忽略）；
+ * - model_message：agent 过程消息（思考、工具调用/结果），进入"思考过程" trace 面板；
+ * - answer_delta / answer_reset：最终回答的增量文本 / 重置（模型重新作答时清空重来）；
+ * - final：单个回答完成（含完整内容）；done：整个流结束；error：出错；
+ * - 多模型专属：multi_model_start（本轮开始）、model_response_start（某模型开始回答）、
+ *   canonical_selected（后端选定用于上下文的回答）。
+ * modelConfigId/responseId 用于把事件路由到对应模型卡片。
+ */
 type AgentStreamEvent = {
   type: string;
   round?: number;
@@ -129,6 +168,7 @@ type SkillDetailResponse = {
   skills?: Skill[];
 };
 
+/** 知识库中的单个文档（含分块统计：child 为检索用小块，parent 为召回上下文的大块） */
 type KnowledgeItem = {
   id: string;
   knowledgeBaseId?: string;
@@ -177,6 +217,12 @@ type KnowledgeBaseCreateResponse = {
   items: KnowledgeItem[];
 };
 
+/**
+ * 模型配置。modelType 区分两类：
+ * - reasoning（推理/对话模型）：可作为主/副模型参与聊天；
+ * - embedding（向量模型）：仅用于知识库向量化，不可被选为对话模型。
+ * apiKeySet/apiKeyPreview：后端不回传完整 key，只回传是否已设置与掩码预览。
+ */
 type ModelConfig = {
   id: string;
   modelType?: "reasoning" | "embedding" | string;
@@ -200,6 +246,15 @@ type ModelConfigResponse = {
   config: ModelConfig;
 };
 
+// ===================== 流式渲染状态（本轮 SSE 期间的临时 DOM 句柄） =====================
+
+/**
+ * 一次流式回答的渲染状态。mode 决定布局：
+ * - "single"：单模型，直接持有 traceList（思考过程）/answerPanel（回答）等 DOM 引用；
+ * - "multi"：多模型，细节下沉到 multi.models（每个模型一份 ModelStreamState）。
+ * answerMarkdown 累积原始 Markdown 文本，每收到 delta 就整体重渲染一次
+ * （简单可靠，代价是重复解析，对聊天长度的文本可接受）。
+ */
 type StreamRenderState = {
   wrapper: HTMLElement;
   mode: "single" | "multi";
@@ -214,6 +269,7 @@ type StreamRenderState = {
   multi?: MultiStreamState;
 };
 
+/** 多模型模式下单个模型卡片的流式状态（与 single 模式的字段一一对应，外加状态标签） */
 type ModelStreamState = {
   responseId?: string;
   modelConfigId: string;
@@ -229,6 +285,7 @@ type ModelStreamState = {
   hasTraceEvents: boolean;
 };
 
+/** 多模型整体状态：轮次 ID、已选 canonical 回答 ID、提示条、卡片网格与各模型状态映射 */
 type MultiStreamState = {
   turnId?: string;
   canonicalResponseId?: string;
@@ -250,7 +307,11 @@ type ActionMenuItem = {
   onClick: () => void | Promise<void>;
 };
 
+/** 输入框"对话设置"级联弹层当前所在面板：根 / 知识库选择 / 多模型选择 */
 type ComposerSettingsPanel = "root" | "knowledge" | "multi";
+
+// ===================== 静态 DOM 引用（页面骨架在 index.html 中，启动时一次性抓取） =====================
+// mustQuery 在元素缺失时直接抛错，保证后续代码不需要判空。
 
 const conversationListEl = mustQuery<HTMLDivElement>("#conversationList");
 const conversationTitleEl = mustQuery<HTMLHeadingElement>("#conversationTitle");
@@ -289,7 +350,12 @@ const messageLocatorEl = mustQuery<HTMLElement>("#messageLocator");
 const chatPaneEl = mustQuery<HTMLElement>(".chatPane");
 const modalRootEl = mustQuery<HTMLDivElement>("#modalRoot");
 
+/** 知识库单文件导入上限：256MB（前端先行校验，避免无谓上传） */
 const maxKnowledgeFileBytes = 256 * 1024 * 1024;
+
+// ===================== 全局可变状态（模块级变量即"store"） =====================
+// 约定：修改这些状态后必须手动调用对应的 renderXxx() 重绘相关区块。
+// 用户偏好（当前模型、副模型、RAG 知识库、侧边栏折叠）额外落 localStorage 以便刷新后恢复。
 
 let conversations: Conversation[] = [];
 let availableSkills: Skill[] = [];
@@ -298,10 +364,15 @@ let knowledgeItems: KnowledgeItem[] = [];
 let modelConfigs: ModelConfig[] = [];
 let enabledSkillNames = new Set<string>();
 let activeConversationId = "";
+// 当前主模型（对话使用的推理模型），持久化到 localStorage
 let activeModelConfigId = window.localStorage.getItem("activeModelConfigId") || "default";
+// 副模型列表（多模型回答时并行提问，至多 2 个）
 let secondaryModelConfigIds = loadSecondaryModelConfigIds();
+// 知识库管理页当前选中的知识库（管理视图用）
 let activeKnowledgeBaseId = window.localStorage.getItem("activeKnowledgeBaseId") || "";
+// 聊天时启用 RAG 检索的知识库（与上者独立：管理什么和用什么是两回事）
 let activeRagKnowledgeBaseId = window.localStorage.getItem("activeRagKnowledgeBaseId") || "";
+// 全局流式标记：SSE 进行中时禁用几乎所有交互（发送、切换视图、增删改配置），防止并发状态混乱
 let isStreaming = false;
 let currentView: "chat" | "skills" | "knowledge" | "models" = "chat";
 let slashMenuIndex = 0;
@@ -321,6 +392,9 @@ let sidebarCollapsed = window.localStorage.getItem("sidebarCollapsed") === "true
 
 setSidebarCollapsed(sidebarCollapsed);
 
+// ===================== 全局事件绑定（模块加载时执行一次） =====================
+
+// 发送消息：表单提交（点击按钮或 Enter），流式进行中忽略
 composerEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   const message = inputEl.value.trim();
@@ -330,6 +404,8 @@ composerEl.addEventListener("submit", async (event) => {
   await sendMessage(message);
 });
 
+// 输入框按键：优先让斜杠技能菜单消费方向键/Enter/Esc；
+// 其余情况下 Enter 直接发送（Shift+Enter 换行；isComposing 避免中文输入法候选期误发）
 inputEl.addEventListener("keydown", (event) => {
   if (handleSlashMenuKeydown(event)) return;
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -342,6 +418,7 @@ inputEl.addEventListener("input", () => {
   renderSlashMenu();
 });
 
+// 失焦后延迟收起斜杠菜单：留出时间让菜单项的 mousedown 先触发选择
 inputEl.addEventListener("blur", () => {
   window.setTimeout(hideSlashMenu, 120);
 });
@@ -354,6 +431,8 @@ skillSearchEl.addEventListener("input", () => {
   renderSkills();
 });
 
+// 主模型切换（隐藏的原生 select，作为自定义弹层的可访问性兜底）：
+// 主模型变更后要把它从副模型列表中剔除（同一模型不能既是主又是副）
 primaryModelSelectorEl.addEventListener("change", () => {
   activeModelConfigId = primaryModelSelectorEl.value || defaultReasoningModelConfigId();
   secondaryModelConfigIds = secondaryModelConfigIds.filter((id) => id !== activeModelConfigId);
@@ -361,6 +440,7 @@ primaryModelSelectorEl.addEventListener("change", () => {
   renderModelSelector();
 });
 
+// 主模型选择弹层开关：与"对话设置"弹层互斥（同一时间只开一个）
 primaryModelToggleEl.addEventListener("click", (event) => {
   event.stopPropagation();
   if (isStreaming || primaryModelToggleEl.disabled) return;
@@ -369,6 +449,7 @@ primaryModelToggleEl.addEventListener("click", (event) => {
   renderModelSelector();
 });
 
+// "对话设置"弹层开关（知识库 / 多模型级联面板），打开时默认进入知识库面板
 composerSettingsButtonEl.addEventListener("click", (event) => {
   event.stopPropagation();
   if (isStreaming || composerSettingsButtonEl.disabled) return;
@@ -381,6 +462,7 @@ composerSettingsButtonEl.addEventListener("click", (event) => {
   renderPrimaryModelPicker();
 });
 
+// 全局点击：点击弹层外部区域时关闭两个 popover（点在弹层/按钮内部则放行）
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (primaryModelPopoverOpen) {
@@ -400,6 +482,7 @@ document.addEventListener("click", (event) => {
   }
 });
 
+// 全局 Esc：优先关闭 popover，其次关闭模态弹窗
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && (primaryModelPopoverOpen || composerSettingsPopoverOpen)) {
     primaryModelPopoverOpen = false;
@@ -423,6 +506,7 @@ ragKnowledgeSelectorEl.addEventListener("change", () => {
   renderComposerSelectionSummary();
 });
 
+// 左侧导航：切换到技能库视图（首次进入才拉取数据，之后走内存缓存）
 skillsNavEl.addEventListener("click", async () => {
   if (isStreaming) return;
   setView("skills");
@@ -433,12 +517,14 @@ skillsNavEl.addEventListener("click", async () => {
   }
 });
 
+// 左侧导航：切换到知识库视图（每次进入都刷新，因为导入/分块状态可能变化）
 knowledgeNavEl.addEventListener("click", async () => {
   if (isStreaming) return;
   setView("knowledge");
   await loadKnowledge().catch(showKnowledgeError);
 });
 
+// 左侧导航：切换到模型配置视图
 modelNavEl.addEventListener("click", async () => {
   if (isStreaming) return;
   setView("models");
@@ -449,11 +535,13 @@ modelNavEl.addEventListener("click", async () => {
   }
 });
 
+// "添加"知识文件：借助隐藏的 <input type=file> 打开系统文件选择器
 addKnowledgeEl.addEventListener("click", () => {
   if (isStreaming || isKnowledgeImporting || !activeKnowledgeBaseId) return;
   knowledgeFileInputEl.click();
 });
 
+// 新建知识库：弹出文本输入对话框获取名称
 createKnowledgeBaseEl.addEventListener("click", async () => {
   if (isStreaming || isKnowledgeImporting) return;
   const name = await promptTextDialog({
@@ -475,6 +563,7 @@ addModelConfigEl.addEventListener("click", () => {
   openModelConfigDialog();
 });
 
+// 文件选择完成：先做体积前置校验，再走 multipart 导入；随后清空 input 以便重复选同一文件
 knowledgeFileInputEl.addEventListener("change", async () => {
   const file = knowledgeFileInputEl.files?.[0];
   knowledgeFileInputEl.value = "";
@@ -490,6 +579,7 @@ knowledgeFileInputEl.addEventListener("change", async () => {
   }
 });
 
+// 新建会话：POST 创建后切为当前会话并刷新列表与消息区
 newConversationEl.addEventListener("click", async () => {
   if (isStreaming) return;
   try {
@@ -506,8 +596,15 @@ newConversationEl.addEventListener("click", async () => {
   }
 });
 
+// 应用启动入口
 void boot().catch(showPageError);
 
+// ===================== 数据加载 / API 调用层 =====================
+
+/**
+ * 启动流程：按依赖顺序加载会话列表 → 模型配置 → 知识库（供 RAG 下拉）→ 技能 → 当前会话消息。
+ * 非核心数据（模型/知识库/技能）加载失败只在各自区块显示错误，不阻断聊天主流程。
+ */
 async function boot(): Promise<void> {
   await loadConversations(false);
   await loadModelConfigs().catch(showModelError);
@@ -518,6 +615,10 @@ async function boot(): Promise<void> {
   await loadMessages();
 }
 
+/**
+ * 拉取会话列表并重绘侧边栏。
+ * @param autoSelect 为 true 且当前无选中会话时，自动选中后端默认会话或第一个会话
+ */
 async function loadConversations(autoSelect = true): Promise<void> {
   const body = await request<ConversationsResponse>("/api/conversations");
   conversations = body.conversations ?? [];
@@ -531,6 +632,7 @@ async function loadConversations(autoSelect = true): Promise<void> {
   renderConversations();
 }
 
+/** 拉取技能列表（GET /api/skills），同步"已启用技能"集合并重绘技能页 */
 async function loadSkills(): Promise<void> {
   const body = await request<SkillsResponse>("/api/skills");
   availableSkills = body.skills ?? [];
@@ -539,6 +641,7 @@ async function loadSkills(): Promise<void> {
   renderSkills();
 }
 
+/** 仅为输入框的 RAG 知识库下拉加载知识库列表（启动时调用，不加载文档明细） */
 async function loadKnowledgeBasesForSelector(): Promise<void> {
   const body = await request<KnowledgeBasesResponse>("/api/knowledge-bases");
   knowledgeBases = body.knowledgeBases ?? [];
@@ -547,6 +650,10 @@ async function loadKnowledgeBasesForSelector(): Promise<void> {
   renderRagKnowledgeSelector();
 }
 
+/**
+ * 加载知识库管理页数据：先取知识库列表，校正当前选中项（被删则回退到第一个），
+ * 再取选中知识库下的文档列表。
+ */
 async function loadKnowledge(): Promise<void> {
   const basesBody = await request<KnowledgeBasesResponse>("/api/knowledge-bases");
   knowledgeBases = basesBody.knowledgeBases ?? [];
@@ -572,6 +679,7 @@ async function loadKnowledge(): Promise<void> {
   renderKnowledge();
 }
 
+/** 创建知识库并自动选中它（后端一次性返回最新列表，避免二次请求） */
 async function createKnowledgeBase(name: string): Promise<void> {
   const body = await request<KnowledgeBaseCreateResponse>("/api/knowledge-bases", {
     method: "POST",
@@ -633,6 +741,10 @@ async function loadModelConfigs(): Promise<void> {
   renderModelConfigs();
 }
 
+/**
+ * 新增或更新一个模型配置（PUT /api/model/configs/:id）。写回本地列表并排序（default 置顶、推理模型在前）。
+ * 若保存的是推理模型则自动设为当前主模型并从副模型剔除；若当前主模型失效则回退默认。
+ */
 async function saveModelConfig(id: string, payload: Record<string, unknown>): Promise<void> {
   const body = await request<ModelConfigResponse>(`/api/model/configs/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -680,6 +792,11 @@ async function deleteModelConfig(id: string): Promise<void> {
   renderModelConfigs();
 }
 
+/**
+ * 上传单个文件到当前知识库（multipart POST /api/knowledge/import，后端负责解析/分块/向量化）。
+ * 用独立 fetch（非 request 封装）以支持 FormData。导入期间置 isKnowledgeImporting 并把"添加"按钮改为"导入中"，
+ * finally 中无论成败都复位按钮状态并重绘。
+ */
 async function importKnowledge(file: File): Promise<void> {
   if (!activeKnowledgeBaseId) {
     throw new Error("请先创建或选择知识库");
@@ -740,6 +857,7 @@ async function deleteKnowledgeItem(id: string): Promise<void> {
   renderKnowledge();
 }
 
+/** 惰性加载技能完整详情：若本地已含 readme（重字段已拉取）则直接返回，否则 GET /api/skills/:name 并合并进缓存。 */
 async function ensureSkillDetail(name: string): Promise<Skill> {
   const index = availableSkills.findIndex((skill) => skill.name === name);
   if (index >= 0 && availableSkills[index].readme !== undefined) {
@@ -769,6 +887,7 @@ async function deleteConversation(id: string): Promise<void> {
   }
 }
 
+/** 加载并渲染当前会话的历史消息（GET /messages）。无会话时显示空态；同时同步标题栏文案。 */
 async function loadMessages(): Promise<void> {
   if (!activeConversationId) {
     conversationTitleEl.textContent = "新会话";
@@ -781,6 +900,16 @@ async function loadMessages(): Promise<void> {
   renderMessages(body.messages ?? []);
 }
 
+/**
+ * 发送一条用户消息并驱动整轮流式回答。
+ * 流程：
+ * 1. 锁定上一轮多模型消息的 canonical 选择（历史轮次不再可切换）；
+ * 2. 本地立即回显用户气泡（乐观渲染，不等后端）；
+ * 3. 依据当前选中的推理模型数量决定单模型 / 多模型渲染骨架；
+ * 4. 置 isStreaming=true 并禁用全部交互（防并发），确保当前会话存在后发起 SSE；
+ * 5. 无论成功失败，finally 中恢复交互状态并把焦点还给输入框。
+ * 出错时用 finishStreamWithAnswer 把错误写进回答区，不抛给上层。
+ */
 async function sendMessage(content: string): Promise<void> {
   lockExistingCanonicalSelection();
   addMessage({ role: "user", content });
@@ -812,6 +941,7 @@ async function sendMessage(content: string): Promise<void> {
   }
 }
 
+/** 统一开关所有会触发状态变更的交互元素（发送、新建会话、切视图、增删配置），流式期间置灰以防并发。 */
 function setInteractionDisabled(disabled: boolean): void {
   sendButtonEl.disabled = disabled;
   inputEl.disabled = disabled;
@@ -824,6 +954,7 @@ function setInteractionDisabled(disabled: boolean): void {
   addModelConfigEl.disabled = disabled;
 }
 
+/** 确保存在可用会话：无选中会话时先尝试从后端拉取默认会话，仍无则新建一个，避免 SSE 请求缺少会话 ID。 */
 async function ensureActiveConversation(): Promise<void> {
   if (activeConversationId) return;
   await loadConversations(false);
@@ -836,6 +967,14 @@ async function ensureActiveConversation(): Promise<void> {
   await loadConversations();
 }
 
+/**
+ * 发起流式对话请求并逐块解析 SSE。
+ * 用 fetch + ReadableStream 而非 EventSource，因为需要 POST body（携带模型/知识库选择）。
+ * 请求体同时带 modelConfigId（兼容单模型旧协议）、modelConfigIds（多模型列表）与
+ * primaryModelConfigId（主模型），knowledgeBaseId 仅在选中且非空知识库时下发。
+ * 读取循环：TextDecoder 流式解码字节 → 累积到 buffer → consumeSSEBuffer 按事件边界切分消费，
+ * done 后再 flush 一次解码器尾部残留。
+ */
 async function streamChat(content: string, streamState: StreamRenderState, modelConfigIds: string[]): Promise<void> {
   const response = await fetch(`/api/conversations/${activeConversationId}/chat/stream`, {
     method: "POST",
@@ -876,6 +1015,10 @@ async function streamChat(content: string, streamState: StreamRenderState, model
   consumeSSEBuffer(buffer, streamState);
 }
 
+/**
+ * 从累积缓冲区中按 SSE 事件分隔（连续两个换行 "\n\n"）切出完整事件逐个处理，
+ * 返回尚未构成完整事件的剩余片段留给下一次读取。这样即使一个事件被 TCP 分包，也能正确重组。
+ */
 function consumeSSEBuffer(buffer: string, streamState: StreamRenderState): string {
   let remaining = buffer.replace(/\r\n/g, "\n");
   while (true) {
@@ -888,6 +1031,14 @@ function consumeSSEBuffer(buffer: string, streamState: StreamRenderState): strin
   }
 }
 
+/**
+ * 解析单个 SSE 事件文本块：
+ * - 忽略空行与注释行（以 ":" 开头）；
+ * - 读取 "event:" 行作为事件类型的兜底；
+ * - 拼接所有 "data:" 行（去掉前导空格）后 JSON.parse 为业务事件对象；
+ * - 若 data JSON 里带 type 字段则以其为准，否则回退到 event: 行的类型；
+ * - JSON 解析失败时返回一个 error 事件而非抛异常，保证渲染不中断。
+ */
 function parseSSEEvent(raw: string): AgentStreamEvent | null {
   let eventType = "message";
   const dataLines: string[] = [];
@@ -915,6 +1066,16 @@ function parseSSEEvent(raw: string): AgentStreamEvent | null {
   return parsed;
 }
 
+/**
+ * 单模型模式的 SSE 事件分发（多模型模式转交 handleMultiStreamEvent）。事件语义：
+ * - user_message：用户消息回显，已本地渲染，直接忽略；
+ * - answer_delta：最终回答的增量文本，追加进回答区并重渲染 Markdown；
+ * - answer_reset：模型决定重新作答，清空已积累的回答（例如加载 skill 后重来）；
+ * - final：本条回答完成，用完整内容落地；
+ * - done：整个流结束，收尾（若尚无最终回答则用 done 携带的内容补齐）；
+ * - error：出错，把错误信息渲染进回答区；
+ * - model_message：agent 的过程消息（思考/工具调用与结果），进入"思考过程" trace 面板。
+ */
 function handleStreamEvent(event: AgentStreamEvent, streamState: StreamRenderState): void {
   if (event.type === "user_message") return;
   if (streamState.mode === "multi") {
@@ -950,6 +1111,16 @@ function handleStreamEvent(event: AgentStreamEvent, streamState: StreamRenderSta
   }
 }
 
+/**
+ * 多模型模式的 SSE 事件分发。核心是靠 event.modelConfigId 把事件路由到对应模型卡片。
+ * 特有事件：
+ * - multi_model_start：本轮多模型开始（占位，无需渲染）；
+ * - model_response_start：某个模型开始回答，更新其卡片状态标签（区分主/副模型）；
+ * - canonical_selected：后端已选定用于后续上下文的回答，切换高亮并回填最新消息元数据；
+ * - done：整轮结束，移除各卡片的 loading，并用最终 message 更新这条历史消息（供刷新后回放）；
+ * - 无 modelConfigId 的 error：视为全局错误，广播到所有模型卡片；
+ * 带 modelConfigId 的 answer_delta/answer_reset/final/error/model_message 则各自作用于单张卡片。
+ */
 function handleMultiStreamEvent(event: AgentStreamEvent, streamState: StreamRenderState): void {
   const multi = streamState.multi;
   if (!multi) return;
@@ -1020,6 +1191,10 @@ function handleMultiStreamEvent(event: AgentStreamEvent, streamState: StreamRend
   }
 }
 
+/**
+ * 按 modelConfigId 惰性获取/创建某模型的卡片流式状态。
+ * 首个事件到达时才建卡并挂到网格；后续事件复用同一状态，并在拿到 responseId 后补写到 dataset。
+ */
 function ensureModelStreamState(streamState: StreamRenderState, modelConfigId: string, responseId?: string): ModelStreamState {
   const multi = streamState.multi;
   if (!multi) throw new Error("missing multi stream state");
@@ -1037,6 +1212,7 @@ function ensureModelStreamState(streamState: StreamRenderState, modelConfigId: s
   return state;
 }
 
+/** 重绘左侧会话列表：整块清空后逐条重建（含标题、更新时间、切换点击与删除按钮）。 */
 function renderConversations(): void {
   conversationListEl.innerHTML = "";
   for (const conversation of conversations) {
@@ -1077,6 +1253,11 @@ function renderConversations(): void {
   }
 }
 
+/**
+ * 视图切换（非路由）：通过 toggle 各区块的 hidden class 在同一页内切换
+ * 聊天 / 技能库 / 知识库 / 模型配置四个视图，并同步导航高亮、标题栏文案与对应区块的重绘。
+ * 聊天区（messages/composer）与工作区页面互斥显示。
+ */
 function setView(view: "chat" | "skills" | "knowledge" | "models"): void {
   currentView = view;
   const isSkills = view === "skills";
@@ -1119,6 +1300,12 @@ function setView(view: "chat" | "skills" | "knowledge" | "models"): void {
   renderMessageLocator();
 }
 
+/**
+ * 渲染技能库列表页。先处理加载错误 / 空态 / 搜索无结果三种边界，
+ * 再按搜索关键字过滤，逐个技能渲染成卡片：头像、名称、启用状态徽标、说明、触发词 pill，
+ * 以及行内操作（启用/禁用开关、删除）。点击卡片主体打开详情弹窗；开关与删除按钮 stopPropagation
+ * 避免冒泡到卡片点击。流式进行中所有操作置灰。
+ */
 function renderSkills(): void {
   skillListEl.innerHTML = "";
   skillSearchEl.disabled = isStreaming;
@@ -1246,6 +1433,12 @@ async function openSkillDetailDialog(skillName: string): Promise<void> {
   });
 }
 
+/**
+ * 渲染知识库管理页：左侧知识库列表 + 右侧当前知识库的文档明细。
+ * 处理加载错误、无知识库、导入中提示、未选中知识库、空文档等多种状态。
+ * 每个知识库/文档卡片展示文档数与 chunk 统计（child 检索块 / parent 上下文块），并挂删除操作菜单。
+ * default 知识库不允许删除。同时刷新输入框的 RAG 知识库下拉。
+ */
 function renderKnowledge(): void {
   renderRagKnowledgeSelector();
   const activeBase = knowledgeBases.find((base) => base.id === activeKnowledgeBaseId) || null;
@@ -1398,6 +1591,7 @@ function renderKnowledge(): void {
   }
 }
 
+/** 重建输入框旁隐藏的原生 RAG 知识库下拉（作为自定义弹层的可访问性兜底），并联动刷新设置弹层与选择摘要。 */
 function renderRagKnowledgeSelector(): void {
   normalizeRagKnowledgeSelection();
   ragKnowledgeSelectorEl.innerHTML = "";
@@ -1435,6 +1629,7 @@ function saveRagKnowledgeSelection(): void {
   }
 }
 
+/** 在输入框上方渲染一行选择摘要（如"知识库：X · 多模型：3 个模型"），无选择时隐藏。 */
 function renderComposerSelectionSummary(): void {
   const items: string[] = [];
   const knowledge = knowledgeBases.find((base) => base.id === activeRagKnowledgeBaseId);
@@ -1448,6 +1643,10 @@ function renderComposerSelectionSummary(): void {
   composerSelectionSummaryEl.classList.toggle("hidden", items.length === 0);
 }
 
+/**
+ * 渲染主模型选择器：输入框旁的自定义下拉按钮 + 弹层。只列出 reasoning 类型模型，
+ * 当前主模型打勾。选中新主模型时把它从副模型列表剔除并持久化。无推理模型时禁用并给出引导文案。
+ */
 function renderPrimaryModelPicker(reasoningConfigs = modelConfigs.filter((config) => modelConfigType(config) === "reasoning")): void {
   primaryModelToggleEl.disabled = isStreaming || reasoningConfigs.length === 0;
   primaryModelToggleEl.setAttribute("aria-expanded", String(primaryModelPopoverOpen));
@@ -1488,6 +1687,10 @@ function renderPrimaryModelPicker(reasoningConfigs = modelConfigs.filter((config
   }
 }
 
+/**
+ * 渲染"对话设置"级联弹层：左栏两个入口（使用知识库 / 使用多模型回答），右栏展示当前入口对应的
+ * 详细选项列表。composerSettingsPanel 记录当前停留的子面板，root 会被规整为 knowledge。
+ */
 function renderComposerSettingsPopover(): void {
   composerSettingsButtonEl.disabled = isStreaming;
   composerSettingsButtonEl.classList.toggle("active", composerSettingsPopoverOpen);
@@ -1584,6 +1787,10 @@ function renderKnowledgeSettingsList(container: HTMLElement): void {
   }
 }
 
+/**
+ * 渲染多模型副模型选择列表：主模型置顶且禁用（固定选中），其余推理模型作为副模型候选。
+ * 副模型最多 2 个，选满后其余候选置灰。切换后立即持久化并保持在 multi 面板。
+ */
 function renderMultiModelSettingsList(container: HTMLElement): void {
   const reasoningConfigs = modelConfigs.filter((config) => modelConfigType(config) === "reasoning");
   const active = reasoningConfigs.find((config) => config.id === activeModelConfigId);
@@ -1638,6 +1845,7 @@ function multiModelSettingSummary(): string {
   return secondaryModelConfigIds.length > 0 ? `${secondaryModelConfigIds.length + 1} 个模型` : "未启用";
 }
 
+/** 通用"⋯"操作菜单：触发按钮 + 悬浮菜单，菜单项支持 danger 样式与禁用；全部项禁用时触发按钮也禁用。 */
 function createActionMenu(label: string, items: ActionMenuItem[]): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "actionMenu";
@@ -1672,6 +1880,10 @@ function createActionMenu(label: string, items: ActionMenuItem[]): HTMLElement {
   return wrapper;
 }
 
+/**
+ * 重建隐藏的原生主模型 select（仅列 reasoning 模型），并联动刷新自定义选择器、对话设置弹层与选择摘要。
+ * 无推理模型时退化为占位项、把主模型重置为 "default"、清空副模型并禁用。
+ */
 function renderModelSelector(): void {
   primaryModelSelectorEl.innerHTML = "";
   primaryModelSelectorEl.disabled = isStreaming;
@@ -1712,12 +1924,14 @@ function normalizeRagKnowledgeSelection(): void {
   window.localStorage.removeItem("activeRagKnowledgeBaseId");
 }
 
+/** 计算实际下发给后端的 RAG 知识库 ID：选中的知识库必须存在且有可检索的 child chunk，否则返回空串（不启用 RAG）。 */
 function selectedRagKnowledgeBaseId(): string {
   const base = knowledgeBases.find((item) => item.id === activeRagKnowledgeBaseId);
   if (!base || (base.childChunkCount ?? 0) <= 0) return "";
   return base.id;
 }
 
+/** 从 localStorage 读取副模型列表，兼容旧 key（selectedModelConfigIds），去空去重并截断到 2 个。 */
 function loadSecondaryModelConfigIds(): string[] {
   const raw = window.localStorage.getItem("secondaryModelConfigIds") || window.localStorage.getItem("selectedModelConfigIds");
   if (!raw) return [];
@@ -1732,6 +1946,10 @@ function loadSecondaryModelConfigIds(): string[] {
   return [];
 }
 
+/**
+ * 校正主/副模型选择的一致性：主模型必须是存在的 reasoning 模型，否则回退到默认；
+ * 副模型必须是 reasoning、不等于主模型、且不超过 2 个。校正后立即持久化。
+ */
 function normalizeModelSelection(): void {
   const reasoningIDs = new Set(modelConfigs.filter((config) => modelConfigType(config) === "reasoning").map((config) => config.id));
   if (!reasoningIDs.has(activeModelConfigId)) {
@@ -1747,11 +1965,17 @@ function saveModelSelection(): void {
   window.localStorage.removeItem("selectedModelConfigIds");
 }
 
+/** 本轮实际使用的推理模型 ID 列表：主模型在前 + 副模型，最多 3 个（决定单/多模型渲染路径与请求体）。 */
 function selectedReasoningModelConfigIds(): string[] {
   normalizeModelSelection();
   return [activeModelConfigId, ...secondaryModelConfigIds].slice(0, 3);
 }
 
+/**
+ * 渲染模型配置管理页：逐条列出模型（含类型徽标 推理/向量、Key 是否已设置、provider/baseURL 摘要），
+ * 每张卡片带"设为当前 / 编辑 / 删除"操作；default 配置不可删。
+ * editingModelConfigId === "__new__" 时在顶部内联渲染新增编辑器。点击卡片主体打开只读详情弹窗。
+ */
 function renderModelConfigs(): void {
   addModelConfigEl.disabled = isStreaming;
   modelConfigListEl.innerHTML = "";
@@ -1910,6 +2134,11 @@ function openModelConfigDialog(config: ModelConfig | null = null): void {
   });
 }
 
+/**
+ * 构建模型配置编辑表单（新增或编辑）。字段：配置 ID（编辑时锁定）、模型类型（default 强制 reasoning 且锁定）、
+ * provider、API Key（留空表示保留原 key）、Base URL、Model、Temperature、Timeout。
+ * 保存时组装 payload（apiKey 仅在填写时下发，剔除历史 extra.embeddingModel）并调用 saveModelConfig。
+ */
 function renderModelConfigEditor(config: ModelConfig | null, options: { onCancel?: () => void; onSaved?: () => void } = {}): HTMLElement {
   const isNew = config === null;
   const panel = document.createElement("section");
@@ -2007,6 +2236,7 @@ function renderSkillTriggerPills(triggers: string[]): HTMLElement {
   return wrapper;
 }
 
+/** 把 Skill 的所有可选字段补齐为安全默认值（空串/空数组/布尔），让渲染与搜索无需到处判空。 */
 function normalizeSkill(skill: Skill): Skill {
   return {
     ...skill,
@@ -2047,6 +2277,7 @@ function skillMatchesQuery(skill: Skill, query: string): boolean {
     .some((value) => String(value).toLowerCase().includes(query));
 }
 
+/** 构建技能详情弹窗主体：元数据网格（ID/来源/触发词/可调用性/工具白黑名单等）+ README/描述/指令/示例/资源分段。 */
 function renderSkillDetail(skill: Skill): HTMLElement {
   const panel = document.createElement("div");
   panel.className = "skillDetailPanel";
@@ -2117,6 +2348,11 @@ function createLabeledInput(labelText: string, value: string, type: string): { w
   return { wrapper, input };
 }
 
+/**
+ * 构建带标签的自定义下拉：底层保留一个隐藏原生 <select>（承载表单值与 change 事件、a11y 兜底），
+ * 上层用按钮 + 自定义菜单实现可样式化的下拉外观。sync() 把原生 select 的当前值同步到自定义 UI（勾选态与显示文案）。
+ * 点击菜单项即改写原生 select 并派发 change 事件；点击外部关闭菜单。
+ */
 function createLabeledSelect(labelText: string, value: string, options: Array<{ value: string; label: string }>): { wrapper: HTMLElement; select: HTMLSelectElement; sync: () => void } {
   const wrapper = document.createElement("div");
   wrapper.className = "modelField customModelSelectField";
@@ -2295,6 +2531,10 @@ function formatDateTime(value: string): string {
   return date.toLocaleString();
 }
 
+/**
+ * 启用/禁用某技能：把目标状态合并进"已启用集合"后整体 PUT /api/skills/config，
+ * 用后端回传的最新技能列表覆盖本地（并保留本地已懒加载的重字段），再刷新列表与斜杠菜单。
+ */
 async function setSkillEnabled(name: string, enabled: boolean): Promise<void> {
   if (isStreaming) return;
   try {
@@ -2335,6 +2575,10 @@ async function deleteSkill(name: string): Promise<void> {
   }
 }
 
+/**
+ * 渲染输入框的斜杠技能菜单（/skill 快捷调用）。仅当光标所在行是 "/关键字" 形态时展示，
+ * 候选来自"已启用且允许用户调用"的技能并按关键字过滤。流式期间或无候选时隐藏。
+ */
 function renderSlashMenu(): void {
   if (isStreaming) {
     hideSlashMenu();
@@ -2381,6 +2625,10 @@ function hideSlashMenu(): void {
   slashMenuIndex = 0;
 }
 
+/**
+ * 探测光标当前是否处于斜杠命令输入态：取光标前所在行，若整行匹配 "/词" 则返回该 token 的
+ * 起止位置与查询词，供菜单过滤与选中替换使用；否则返回 null。
+ */
 function currentSlashState(): { tokenStart: number; tokenEnd: number; query: string } | null {
   const cursor = inputEl.selectionStart ?? inputEl.value.length;
   const beforeCursor = inputEl.value.slice(0, cursor);
@@ -2395,6 +2643,7 @@ function currentSlashState(): { tokenStart: number; tokenEnd: number; query: str
   };
 }
 
+/** 斜杠菜单键盘导航：上下键循环移动高亮、Enter/Tab 选中、Esc 关闭。返回 true 表示已消费该按键（阻止发送/换行）。 */
 function handleSlashMenuKeydown(event: KeyboardEvent): boolean {
   if (skillMenuEl.classList.contains("hidden")) return false;
   if (event.key === "ArrowDown") {
@@ -2422,6 +2671,7 @@ function handleSlashMenuKeydown(event: KeyboardEvent): boolean {
   return false;
 }
 
+/** 选中斜杠菜单某项：用 "/技能名 " 替换输入框中当前的 "/词" token，并把光标移到插入内容之后。 */
 function selectSlashSkill(index: number): void {
   const skill = slashMenuSkills[index];
   const state = currentSlashState();
@@ -2436,6 +2686,7 @@ function selectSlashSkill(index: number): void {
   hideSlashMenu();
 }
 
+/** 整块重绘消息列表（切会话/首次加载时调用）。空列表显示欢迎空态；否则逐条渲染并给最后一条打上"可选 canonical"标记。 */
 function renderMessages(messages: Message[]): void {
   messagesEl.innerHTML = "";
   setEmptyChat(messages.length === 0);
@@ -2451,6 +2702,10 @@ function renderMessages(messages: Message[]): void {
   scrollMessages();
 }
 
+/**
+ * 追加渲染一条消息气泡。多模型助手消息走多卡片布局；其余（用户/单模型助手）渲染成普通气泡：
+ * 助手回答外包一层 answerPanel 并挂"查看 Markdown 原文"按钮，metadata.loopRounds>1 时附带 agent 轮数标注。
+ */
 function addMessage(input: Message, shouldScroll = true): HTMLElement {
   setEmptyChat(false);
   if (input.role === "assistant" && input.metadata?.multiModel) {
@@ -2486,6 +2741,7 @@ function addMessage(input: Message, shouldScroll = true): HTMLElement {
   return wrapper;
 }
 
+/** 仅对"最后一条多模型助手消息"注入 latestSelectable 标记，使其 canonical 回答可被点选切换（历史轮次不可改）。 */
 function messageWithLatestFlag(message: Message, index: number, messages: Message[]): Message {
   if (message.role !== "assistant" || !message.metadata?.multiModel) return message;
   return {
@@ -2503,6 +2759,10 @@ function addMultiModelMessage(input: Message, shouldScroll = true): HTMLElement 
   return wrapper;
 }
 
+/**
+ * 由一条多模型助手消息（历史回放）构建整块 DOM：可选的顶部提示条 + N 列卡片网格（每模型一张回答卡）。
+ * canonicalResponseId 决定哪张卡片高亮为"用于上下文"，latestSelectable 决定卡片是否可点选切换。
+ */
 function buildMultiModelMessageElement(input: Message): HTMLElement {
   const metadata = input.metadata || {};
   const responses = Array.isArray(metadata.modelResponses) ? metadata.modelResponses : [];
@@ -2529,6 +2789,10 @@ function buildMultiModelMessageElement(input: Message): HTMLElement {
   return wrapper;
 }
 
+/**
+ * 渲染多模型历史消息中单个模型的回答卡片：标题（模型名）+ 状态标签（用于上下文/主模型候选/候选回答）+
+ * Markdown 回答内容（失败态显示错误）。可选中且未选中且已完成时，点击卡片会把该回答设为 canonical。
+ */
 function renderModelResponseCard(message: Message, response: ModelResponseSummary, canonicalResponseId: string, selectable: boolean): HTMLElement {
   const selected = response.id === canonicalResponseId;
   const card = document.createElement("section");
@@ -2563,6 +2827,7 @@ function renderModelResponseCard(message: Message, response: ModelResponseSummar
   return card;
 }
 
+/** 发送新一轮前调用：把上一轮多模型卡片的可选态摘除并更新提示文案，锁定历史轮次的 canonical 选择。 */
 function lockExistingCanonicalSelection(): void {
   messagesEl.querySelectorAll<HTMLElement>(".multiModelCard.selectable").forEach((card) => {
     card.classList.remove("selectable");
@@ -2572,6 +2837,10 @@ function lockExistingCanonicalSelection(): void {
   });
 }
 
+/**
+ * 用户点选某模型回答作为本轮 canonical（进入后续上下文）：PUT 到 turns/:turnId/canonical-response，
+ * 后端返回更新后的消息，前端据此重绘该条多模型消息以更新高亮。缺 turnId/会话/responseId 或流式中时忽略。
+ */
 async function selectCanonicalResponse(message: Message, responseId: string): Promise<void> {
   const turnId = String(message.metadata?.turnId || "");
   const conversationId = message.conversationId || activeConversationId;
@@ -2587,6 +2856,7 @@ async function selectCanonicalResponse(message: Message, responseId: string): Pr
   }
 }
 
+/** 用后端回传的最新消息就地替换页面上对应 messageId 的多模型消息 DOM（始终标记为可选，因为它是最新一轮）。 */
 function updateLatestAssistantMessage(message: Message): void {
   const existing = Array.from(messagesEl.querySelectorAll<HTMLElement>(".message")).find((item) => item.dataset.messageId === (message.id || ""));
   if (!existing) return;
@@ -2595,6 +2865,10 @@ function updateLatestAssistantMessage(message: Message): void {
   scrollMessages();
 }
 
+/**
+ * 流式过程中同步多模型卡片的高亮：canonical（后端已选或默认主模型）卡片高亮、其余置灰并更新状态标签。
+ * completed=true 时额外更新顶部提示条文案，告知用户可切换本轮回答。
+ */
 function updateMultiCanonicalStyles(streamState: StreamRenderState, completed: boolean): void {
   const multi = streamState.multi;
   if (!multi) return;
@@ -2614,6 +2888,10 @@ function modelDisplayName(modelConfigId: string): string {
   return config ? modelConfigLabel(config) : modelConfigId;
 }
 
+/**
+ * 构建单模型流式回答的空骨架并挂到消息区：可折叠的"思考过程"面板（含 loading 动画）+ 初始隐藏的回答面板。
+ * 返回持有各 DOM 句柄的 StreamRenderState，供后续 delta/trace/final 事件增量填充。
+ */
 function addAssistantStream(): StreamRenderState {
   const wrapper = document.createElement("article");
   wrapper.className = "message assistant streaming";
@@ -2648,6 +2926,10 @@ function addAssistantStream(): StreamRenderState {
   return streamState;
 }
 
+/**
+ * 构建多模型流式回答骨架：顶部提示条 + N 列卡片网格，为每个选中模型预建一张流式卡片并存入 multi.models 映射。
+ * 初始按"主模型默认高亮"设置卡片样式，后续由 SSE 事件驱动各卡片内容与 canonical 高亮。
+ */
 function addMultiAssistantStream(modelConfigIds: string[]): StreamRenderState {
   const wrapper = document.createElement("article");
   wrapper.className = "message assistant streaming multiModelMessage";
@@ -2680,6 +2962,7 @@ function addMultiAssistantStream(modelConfigIds: string[]): StreamRenderState {
   return streamState;
 }
 
+/** 构建单张多模型流式卡片（标题+状态标签+紧凑思考过程面板+隐藏回答面板），返回其 ModelStreamState 供事件填充。 */
 function createModelStreamCard(modelConfigId: string, responseId?: string): ModelStreamState {
   const card = document.createElement("section");
   card.className = `multiModelCard streaming${modelConfigId === activeModelConfigId ? " canonical" : " muted"}`;
@@ -2721,6 +3004,7 @@ function createModelStreamCard(modelConfigId: string, responseId?: string): Mode
   return state;
 }
 
+/** 向某模型卡片的思考过程列表追加一条 trace（过程消息或工具调用/结果的 JSON），并滚动到底。 */
 function appendModelTraceEvent(modelState: ModelStreamState, event: AgentStreamEvent): void {
   modelState.hasTraceEvents = true;
   const item = document.createElement("section");
@@ -2733,6 +3017,7 @@ function appendModelTraceEvent(modelState: ModelStreamState, event: AgentStreamE
   scrollMessages();
 }
 
+/** 追加某模型回答的增量文本：累积原始 Markdown 后整体重渲染并显示回答面板（已 final 或应抑制时跳过）。 */
 function appendModelAnswerDelta(modelState: ModelStreamState, delta: string): void {
   if (!delta || modelState.hasFinalAnswer) return;
   modelState.answerMarkdown += delta;
@@ -2749,6 +3034,7 @@ function resetModelLiveAnswer(modelState: ModelStreamState): void {
   modelState.answerPanel.classList.add("hidden");
 }
 
+/** 某模型回答完成：落地完整内容、移除 loading、有过程则折叠思考面板（无过程则移除），更新状态标签。 */
 function finishModelStreamWithAnswer(modelState: ModelStreamState, content: string): void {
   modelState.hasFinalAnswer = true;
   modelState.answerMarkdown = content || "(empty response)";
@@ -2765,6 +3051,7 @@ function finishModelStreamWithAnswer(modelState: ModelStreamState, content: stri
   scrollMessages();
 }
 
+/** 单模型模式：向思考过程列表追加一条 trace（过程消息或工具调用/结果 JSON）。 */
 function appendTraceEvent(streamState: StreamRenderState, event: AgentStreamEvent): void {
   streamState.hasTraceEvents = true;
   const item = document.createElement("section");
@@ -2779,6 +3066,7 @@ function appendTraceEvent(streamState: StreamRenderState, event: AgentStreamEven
   scrollMessages();
 }
 
+/** 单模型模式：追加回答增量文本，累积原始 Markdown 后整体重渲染并显示回答面板。 */
 function appendAnswerDelta(streamState: StreamRenderState, delta: string): void {
   if (!delta || streamState.hasFinalAnswer) return;
   streamState.answerMarkdown = (streamState.answerMarkdown || "") + delta;
@@ -2797,12 +3085,17 @@ function resetLiveAnswer(streamState: StreamRenderState): void {
   streamState.answerPanel?.classList.add("hidden");
 }
 
+/**
+ * 判断是否暂时抑制实时回答渲染：当回答开头正在逐字拼出 "<load_skill" 指令标记（尚不完整）时，
+ * 先不渲染，避免把内部的 skill 加载指令闪现给用户。等待后续 answer_reset 清空重来。
+ */
 function shouldSuppressLiveAnswer(markdown: string): boolean {
   const trimmed = markdown.trimStart().toLowerCase();
   if (!trimmed) return true;
   return "<load_skill".startsWith(trimmed) || trimmed.startsWith("<load_skill");
 }
 
+/** 单模型回答收尾：落地完整内容、移除 loading、有过程则折叠思考面板（无过程则移除）、去掉 streaming 状态。 */
 function finishStreamWithAnswer(streamState: StreamRenderState, content: string): void {
   streamState.hasFinalAnswer = true;
   streamState.answerMarkdown = content || "(empty response)";
@@ -2818,6 +3111,7 @@ function finishStreamWithAnswer(streamState: StreamRenderState, content: string)
   scrollMessages();
 }
 
+/** 从事件中提取用于 trace 展示的 payload：优先工具调用/结果（数组或单个），序列化为紧凑 JSON 文本。 */
 function eventPayload(event: AgentStreamEvent): string {
   if (event.toolCalls?.length) return compactJSONString(event.toolCalls);
   if (event.toolResults?.length) return compactJSONString(event.toolResults);
@@ -2826,6 +3120,7 @@ function eventPayload(event: AgentStreamEvent): string {
   return "";
 }
 
+/** 序列化为带缩进的 JSON，过长（>2200 字符）时截断中间部分，保留头尾以免 trace 面板被巨型 payload 撑爆。 */
 function compactJSONString(value: unknown): string {
   const text = JSON.stringify(value, null, 2);
   if (text.length <= 2200) return text;
@@ -2851,6 +3146,10 @@ function setSidebarCollapsed(collapsed: boolean): void {
   window.localStorage.setItem("sidebarCollapsed", String(collapsed));
 }
 
+/**
+ * 渲染右侧消息定位器（迷你目录）：仅聊天视图且消息多于一条时显示。为每条消息补 id 锚点，
+ * 生成带 Q/A 前缀与内容摘要的按钮，点击平滑滚动到对应消息。
+ */
 function renderMessageLocator(): void {
   messageLocatorEl.innerHTML = "";
   const messages = Array.from(messagesEl.querySelectorAll<HTMLElement>(".message"));
@@ -2881,6 +3180,7 @@ function locatorLabel(message: HTMLElement, index: number): string {
   return `${prefix}${index + 1} · ${text.slice(0, 18)}`;
 }
 
+/** 给回答面板加一个"MD"角标按钮，点击弹窗展示该回答的 Markdown 原文预览。getContent 惰性取值以适配流式内容。 */
 function attachAnswerSourceButton(container: HTMLElement, getContent: () => string, title: string): void {
   const button = document.createElement("button");
   button.type = "button";
@@ -2910,6 +3210,11 @@ function openSourceDialog(title: string, content: string): void {
   });
 }
 
+/**
+ * 通用模态弹窗构建器。先关掉已有弹窗，再按参数搭建 backdrop + dialog（标题/描述/正文/底部按钮）。
+ * 点击遮罩或关闭按钮视为取消。仅"关闭"一个动作时不渲染底部按钮区。动作按钮点击期间禁用全部按钮防重复提交。
+ * size 控制弹窗宽度变体（default/wide/source）。
+ */
 function openAppModal(options: {
   title: string;
   description?: string;
@@ -2996,6 +3301,7 @@ function openAppModal(options: {
   }, 0);
 }
 
+/** 关闭模态弹窗并清理 DOM/body 状态。notifyCancel=true 时触发注册的 onCancel（用于 Promise 化弹窗 resolve 取消值）。 */
 function closeAppModal(notifyCancel = true): void {
   const cancel = modalCancelHandler;
   modalCancelHandler = null;
@@ -3006,6 +3312,7 @@ function closeAppModal(notifyCancel = true): void {
   if (notifyCancel) cancel?.();
 }
 
+/** 把删除确认弹窗 Promise 化：确认返回 true、取消/关闭返回 false，settled 保证只 resolve 一次。 */
 function confirmDelete(title: string, message: string): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
@@ -3027,6 +3334,7 @@ function confirmDelete(title: string, message: string): Promise<boolean> {
   });
 }
 
+/** 把单行文本输入弹窗 Promise 化：确认返回去空白后的非空字符串、取消返回 null；空值时就地报错不关闭。 */
 function promptTextDialog(options: { title: string; label: string; placeholder?: string; confirmText?: string }): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false;
@@ -3076,6 +3384,10 @@ function promptTextDialog(options: { title: string; label: string; placeholder?:
   });
 }
 
+/**
+ * 统一的 JSON API 请求封装：默认带 content-type: application/json，读取响应文本并尝试 JSON 解析。
+ * 非 2xx 时抛出后端返回的 error 字段（或原始文本/状态码）；成功但非法 JSON 也抛错。所有 /api 调用都走这里。
+ */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -3111,6 +3423,7 @@ async function responseError(response: Response): Promise<string> {
   }
 }
 
+/** 页面级致命错误（如启动失败）：清空消息区并在其中显示错误提示。 */
 function showPageError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   setEmptyChat(true);
@@ -3121,6 +3434,7 @@ function showPageError(error: unknown): void {
   messagesEl.appendChild(errorEl);
 }
 
+// 各视图专属错误处理：把错误信息写入对应的 xxxLoadError 状态并重绘该视图（在区块内展示错误+重试）。
 function showSkillError(error: unknown): void {
   skillLoadError = error instanceof Error ? error.message : String(error);
   availableSkills = [];
@@ -3147,6 +3461,7 @@ function setEmptyChat(isEmpty: boolean): void {
   chatPaneEl.classList.toggle("emptyChat", isEmpty);
 }
 
+/** 抓取必须存在的 DOM 元素：缺失即抛错（fail-fast），让后续引用无需判空。 */
 function mustQuery<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
   if (!element) throw new Error(`Missing element: ${selector}`);
